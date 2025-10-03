@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"repoman/internal/clone"
 	"repoman/internal/config"
 	"repoman/internal/pristine"
 	"repoman/internal/vault"
@@ -48,6 +49,8 @@ automated synchronization, and extensibility through plugins.`,
 	rootCmd.AddCommand(cloneCmd)
 	rootCmd.AddCommand(destroyCmd)
 	rootCmd.AddCommand(syncCmd)
+	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(cleanupCmd)
 	rootCmd.AddCommand(agentCmd)
 
 	// Execute
@@ -123,7 +126,19 @@ var cloneCmd = &cobra.Command{
 	Long: `Create a working copy from a pristine. Clone name is auto-generated if not provided.`,
 	Args: cobra.RangeArgs(1, 2),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Clone command - to be implemented")
+		config := cfg.GetConfig()
+		cloneManager := clone.NewManager(config.VaultPath, config.PristinesPath, config.ClonesPath)
+
+		pristineName := args[0]
+		var cloneName string
+		if len(args) > 1 {
+			cloneName = args[1]
+		}
+
+		if err := cloneManager.Clone(pristineName, cloneName); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	},
 }
 
@@ -135,7 +150,14 @@ var destroyCmd = &cobra.Command{
 keeps it in the vault.`,
 	Args: cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Destroy command - to be implemented")
+		config := cfg.GetConfig()
+		cloneManager := clone.NewManager(config.VaultPath, config.PristinesPath, config.ClonesPath)
+
+		target := args[0]
+		if err := cloneManager.Destroy(target); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	},
 }
 
@@ -201,6 +223,50 @@ var agentStatusCmd = &cobra.Command{
 	Short: "Show agent status and dashboard",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("Agent status command - to be implemented")
+	},
+}
+
+// listCmd represents the list command
+var listCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all clones",
+	Long: `List all clones with their metadata.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		config := cfg.GetConfig()
+		cloneManager := clone.NewManager(config.VaultPath, config.PristinesPath, config.ClonesPath)
+
+		clones, err := cloneManager.List()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		if len(clones) == 0 {
+			fmt.Println("No clones found")
+			return
+		}
+
+		fmt.Printf("Found %d clone(s):\n", len(clones))
+		for _, clone := range clones {
+			fmt.Printf("  %s (from %s) - created %s\n", 
+				clone.Name, clone.Repo, clone.Created.Format("2006-01-02 15:04"))
+		}
+	},
+}
+
+// cleanupCmd represents the cleanup command
+var cleanupCmd = &cobra.Command{
+	Use:   "cleanup",
+	Short: "Clean up orphaned clones",
+	Long: `Clean up clones that exist on disk but are not tracked in metadata.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		config := cfg.GetConfig()
+		cloneManager := clone.NewManager(config.VaultPath, config.PristinesPath, config.ClonesPath)
+
+		if err := cloneManager.CleanupOrphanedClones(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	},
 }
 
