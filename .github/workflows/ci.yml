@@ -2,9 +2,7 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
-  pull-requests:
-    branches: [ main ]
+    branches: [ master, develop ]
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
