@@ -189,3 +189,69 @@ func (m *Manager) EnsureDirectories() error {
 
 	return nil
 }
+
+// LoadDefaultConfig loads default configuration
+func (m *Manager) LoadDefaultConfig() error {
+	m.setDefaults()
+	
+	// Load config from viper values
+	config := &types.Config{
+		VaultPath:            viper.GetString("vault_path"),
+		PristinesPath:        viper.GetString("pristines_path"),
+		ClonesPath:           viper.GetString("clones_path"),
+		PluginsPath:          viper.GetString("plugins_path"),
+		LogsPath:             viper.GetString("logs_path"),
+		DefaultSyncInterval:  viper.GetString("default_sync_interval"),
+		AgentPollingFreq:     viper.GetString("agent_polling_frequency"),
+		HookTimeout:          viper.GetString("hook_timeout"),
+		Logging: types.LoggingConfig{
+			Level:   viper.GetString("logging.level"),
+			Verbose: viper.GetBool("logging.verbose"),
+			Quiet:   viper.GetBool("logging.quiet"),
+		},
+		Plugins: types.PluginConfig{
+			Enabled:      viper.GetBool("plugins.enabled"),
+			AutoDiscover: viper.GetBool("plugins.auto_discover"),
+		},
+	}
+	
+	// Expand paths
+	m.expandPaths(config)
+	
+	if err := config.Validate(); err != nil {
+		return fmt.Errorf("config validation failed: %w", err)
+	}
+	m.config = config
+	return nil
+}
+
+// GetDefaultConfig returns the default configuration
+func (m *Manager) GetDefaultConfig() *types.Config {
+	return &types.Config{
+		VaultPath:            filepath.Join(os.Getenv("HOME"), ".repoman", "vault"),
+		PristinesPath:        filepath.Join(os.Getenv("HOME"), ".repoman", "pristines"),
+		ClonesPath:           filepath.Join(os.Getenv("HOME"), ".repoman", "clones"),
+		PluginsPath:          filepath.Join(os.Getenv("HOME"), ".repoman", "plugins"),
+		LogsPath:             filepath.Join(os.Getenv("HOME"), ".repoman", "logs"),
+		DefaultSyncInterval:  "1h",
+		AgentPollingFreq:     "5m",
+		HookTimeout:          "300s",
+		Logging: types.LoggingConfig{
+			Level:   "info",
+			Verbose: false,
+			Quiet:   false,
+		},
+		Plugins: types.PluginConfig{
+			Enabled:      true,
+			AutoDiscover: true,
+		},
+	}
+}
+
+// validateConfig validates a configuration
+func (m *Manager) validateConfig(config *types.Config) error {
+	if err := config.Validate(); err != nil {
+		return err
+	}
+	return nil
+}

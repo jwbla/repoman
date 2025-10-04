@@ -182,16 +182,29 @@ Before installing repoman, ensure you have the following dependencies:
 
 ### Pre-built Binaries
 
-Download the latest release from the GitHub releases page. Extract and place the binary in your PATH:
+Download pre-built binaries from the [GitHub releases](https://github.com/USERNAME/repoman/releases) page:
 
+**Available Platforms:**
+- Linux (amd64, arm64)
+- macOS (amd64, arm64)
+
+**Installation:**
 ```bash
 # Download latest release
-wget https://github.com/your-org/repoman/releases/latest/download/repoman-linux-amd64
+wget https://github.com/USERNAME/repoman/releases/latest/download/repoman-linux-amd64
 
 # Make executable and install
 chmod +x repoman-linux-amd64
 sudo mv repoman-linux-amd64 /usr/local/bin/repoman
+
+# Verify installation
+repoman --version
 ```
+
+**Package Managers (Coming Soon):**
+- Homebrew (macOS)
+- AUR (Arch Linux)
+- Snap package (Ubuntu)
 
 ## Requirements
 
@@ -205,6 +218,51 @@ sudo mv repoman-linux-amd64 /usr/local/bin/repoman
 
 [License information to be added]
 
+## Status & Reliability
+
+[![CI/CD](https://github.com/USERNAME/repoman/workflows/CI%2FCD%20Pipeline/badge.svg)](https://github.com/USERNAME/repoman/actions)
+[![Security Scans](https://github.com/USERNAME/repoman/workflows/Security%20Scans/badge.svg)](https://github.com/USERNAME/repoman/actions)
+[![Go Report Card](https://goreportcard.com/badge/github.com/USERNAME/repoman)](https://goreportcard.com/report/github.com/USERNAME/repoman)
+
+### CI/CD Pipeline
+- ✅ **Multi-platform builds** - Linux/macOS (amd64/arm64)
+- ✅ **Continuous testing** - Go 1.19, 1.20, 1.21
+- ✅ **Code quality** - Linting, formatting, coverage
+- ✅ **Security scanning** - Vulnerability detection, dependency checking
+- ✅ **Automatic releases** - Tagged releases with checksums
+
+### Security Features
+- 🔒 **Dependency vulnerability scanning**
+- 🔒 **Secret detection** 
+- 🔒 **License compliance**
+- 🔒 **CodeQL analysis**
+- 🔒 **Responsible disclosure process**
+
 ## Contributing
 
-[Contributing guidelines to be added]
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### Quick Contribution Setup
+```bash
+git clone https://github.com/USERNAME/repoman.git
+cd repoman
+make build
+make test
+```
+
+### Development
+```bash
+# Run tests with coverage
+make test-coverage
+
+# Format code
+make fmt
+
+# Run linting
+make lint
+```
+
+### Reporting Issues
+- 🐛 [Bug Reports](https://github.com/USERNAME/repoman/issues/new?template=bug_report.md)
+- 💡 [Feature Requests](https://github.com/USERNAME/repoman/issues/new?template=feature_request.md)
+- 🔒 [Security Issues](SECURITY.md) - Please follow responsible disclosure

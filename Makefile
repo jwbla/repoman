@@ -25,6 +25,12 @@ build-all:
 	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 cmd/repoman/main.go
 	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 cmd/repoman/main.go
 
+# Cross-compile (used by CI)
+.PHONY: cross-compile
+cross-compile:
+	mkdir -p $(BUILD_DIR)
+	go build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) cmd/repoman/main.go
+
 # Install to system
 .PHONY: install
 install: build

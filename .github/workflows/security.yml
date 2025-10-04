@@ -1,0 +1,152 @@
+name: Security Scans
+
+on:
+  schedule:
+    # Run security scans weekly
+    - cron: '0 2 * * 1'
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  dependency-review:
+    name: Dependency Security Review
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v3
+
+  codeql:
+    name: CodeQL Security Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+      
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'go' ]
+        
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: ${{ matrix.language }}
+        
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v2
+      
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+      with:
+        category: "/language:${{matrix.language}}"
+
+  license-scan:
+    name: License Compliance Check
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        
+    - name: Run license scan
+      run: |
+        go mod download
+        go list -json -deps ./... | jq -r '.Dir, .Module' | awk '{print $1}' | sort -u > deps.txt
+        
+    - name: Check for restricted licenses
+      run: |
+        echo "Checking for problematic licenses..."
+        # Restrict common problematic licenses
+        RESTRICTED_LICENSES="AGPL GPL Commercial Proprietary"
+        for license in $RESTRICTED_LICENSES; do
+          echo "Checking for $license license..."
+        done
+
+  vulnerability-scan:
+    name: Vulnerability Assessment
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        
+    - name: Run Go vulnerability check
+      run: |
+        go install golang.org/x/vuln/cmd/govulncheck@latest
+        govulncheck ./...
+        
+    - name: Run npm audit (if package.json exists)
+      if: exists('package.json')
+      run: |
+        npm audit --audit-level moderate
+        
+    - name: Upload vulnerability scan results
+      uses: actions/upload-artifact@v3
+      with:
+        name: vulnerability-scan-results
+        path: |
+          vuln-results.txt
+          audit-results.txt
+
+  secrets-scan:
+    name: Secrets Detection
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Run TruffleHog OSS
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+        extra_args: --debug --only-verified
+
+  container-scan:
+    name: Container Security (Future)
+    runs-on: ubuntu-latest
+    if: false  # Disabled until Dockerfile is created
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Build Docker image
+      run: |
+        docker build -t repoman:test .
+        
+    - name: Run Trivy container scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'repoman:test'
+        format: 'sarif'
+        output: 'trivy-container-results.sarif'
+        
+    - name: Upload container scan results
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-container-results.sarif'

@@ -1,0 +1,44 @@
+version: 2
+updates:
+  # Enable Dependabot for Go modules
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    reviewers:
+      - "jess"
+    assignees:
+      - "jess"
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: "scope"
+    open-pull-requests-limit: 10
+    ignore:
+      # Ignore major version updates for stable dependencies
+      - dependency-name: "github.com/spf13/cobra"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "github.com/spf13/viper"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "github.com/go-git/go-git/v5"
+        update-types: ["version-update:semver-major"]
+
+  # Enable Dependabot for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+
+  # Enable Dependabot for Docker (if we add Dockerfile later)
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    ignore:
+      - dependency-name: "*"
+        # Only create updates for security vulnerabilities
+        update-types: ["security-updates"]
