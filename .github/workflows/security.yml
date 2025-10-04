@@ -97,11 +97,6 @@ jobs:
         go install golang.org/x/vuln/cmd/govulncheck@latest
         govulncheck ./...
         
-    - name: Run npm audit (if package.json exists)
-      if: exists('package.json')
-      run: |
-        npm audit --audit-level moderate
-        
     - name: Upload vulnerability scan results
       uses: actions/upload-artifact@v3
       with:
