@@ -60,3 +60,8 @@ coverage.out
 # Profiling files
 *.prof
 *.pprof
+
+
+# Added by cargo
+
+/target
