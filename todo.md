@@ -14,3 +14,7 @@
 * CI
 * What even is v1 going to have?
 
+* check git release tags
+```sh
+git ls-remote --tags https://github.com/libsdl-org/SDL | tail -5
+```
