@@ -296,49 +296,80 @@ This roadmap breaks down the implementation into small, single-point stories tha
 - [ ] Write integration tests for periodic polling
 - [ ] Ensure tests run in CI
 
-## Phase 12: Code Organization & Polish
+## Phase 12: Authentication & Credential Management
 
-### 12.1 Extract Command Handlers
+### 12.1 Basic Authentication Support
+- [ ] Ensure git2-rs operations use system's git credential configuration
+- [ ] Support SSH authentication via SSH agent (default behavior)
+- [ ] Support HTTPS authentication via git credential helper (default behavior)
+- [ ] Handle authentication failures gracefully with clear error messages
+- [ ] For interactive operations (init, sync in CLI): prompt for credentials when needed via git2-rs credential callbacks
+- [ ] Document that repoman uses existing git/SSH configuration (no special setup needed for most users)
+
+### 12.2 Agent Authentication Requirements
+- [ ] Ensure agent operations work non-interactively
+- [ ] Require SSH agent or credential helper for agent background operations
+- [ ] Log authentication failures clearly (without exposing credentials)
+- [ ] Skip repos with auth failures in agent, log for user to fix
+- [ ] Document agent authentication setup requirements
+
+### 12.3 Optional Per-Repo Auth Configuration
+- [ ] Add optional `auth_config` field to metadata structure
+- [ ] Support SSH key override per repo (for deploy keys or custom keys)
+- [ ] Support token source references (env vars, keyring) - never store actual tokens
+- [ ] Implement per-repo credential configuration in git2-rs operations
+- [ ] Handle cases where per-repo config conflicts with global config
+
+### 12.4 Phase 12 Unit Tests
+- [ ] Write unit tests for authentication handling (SSH, HTTPS, credential callbacks)
+- [ ] Write unit tests for per-repo auth configuration
+- [ ] Write integration tests for agent authentication (non-interactive scenarios)
+- [ ] Write tests for authentication failure handling
+- [ ] Ensure tests run in CI
+
+## Phase 13: Code Organization & Polish
+
+### 13.1 Extract Command Handlers
 - [ ] Move all command match arms to separate handler functions in command modules
 - [ ] Clean up `main.rs` to just parse and route
 - [ ] Ensure all error handling is consistent
 
-### 12.2 Error Handling Improvements
+### 13.2 Error Handling Improvements
 - [ ] Create custom error types in `src/error.rs`
 - [ ] Use `thiserror` or `anyhow::Context` for better error messages
 - [ ] Add context to all error returns
 - [ ] Ensure user-friendly error messages
 
-### 12.3 Logging
+### 13.3 Logging
 - [ ] Add `tracing` or `log` crate
 - [ ] Replace `println!` with proper logging
 - [ ] Add log levels (info, warn, error)
 - [ ] Write agent logs to `~/.repoman/logs/`
 
-### 12.4 Phase 12 Unit Tests
+### 13.4 Phase 13 Unit Tests
 - [ ] Write unit tests for error handling improvements
 - [ ] Write unit tests for logging functionality
 - [ ] Ensure all tests pass with new error types
 - [ ] Ensure tests run in CI
 
-## Phase 13: Future Enhancements (Post-Beta)
+## Phase 14: Future Enhancements (Post-Beta)
 
-### 13.1 Hooks System
+### 14.1 Hooks System
 - [ ] Define hook configuration in metadata
 - [ ] Implement hook execution before/after operations
 - [ ] Support async hooks
 
-### 13.2 Plugin System
+### 14.2 Plugin System
 - [ ] Add Lua integration (mlua crate)
 - [ ] Implement plugin discovery in `~/.repoman/plugins/`
 - [ ] Add plugin command routing
 
-### 13.3 Job Queue
+### 14.3 Job Queue
 - [ ] Implement job queue for agent
 - [ ] Allow CLI to enqueue jobs instead of executing directly
 - [ ] Agent processes queue in background
 
-### 13.4 Additional Features
+### 14.4 Additional Features
 - [ ] Build configuration support
 - [ ] Branch tracking
 - [ ] README extraction
@@ -356,4 +387,6 @@ This roadmap breaks down the implementation into small, single-point stories tha
 - **Clone operations use reference clones for space efficiency**
 - **Multiple remotes are supported with console warnings when detected**
 - **List command provides visibility into vault status, pristines, and clones with metadata**
+- **Authentication leverages git's existing credential system (SSH agent, credential helper) - most users need no special setup**
+- **Per-repo auth configuration is optional for advanced use cases (deploy keys, custom tokens)**
 
