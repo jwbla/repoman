@@ -145,9 +145,43 @@ This roadmap breaks down the implementation into small, single-point stories tha
 - [ ] Write integration tests verifying reference clone space efficiency
 - [ ] Ensure tests run in CI
 
-## Phase 7: Destroy Command
+## Phase 7: List Command
 
-### 7.1 Destroy Operation
+### 7.1 List Operation
+- [ ] Create `src/operations/list.rs` module
+- [ ] Implement `list_all_repos(config: &Config)` function
+- [ ] Load vault to get all vaulted repositories
+- [ ] For each repo, load metadata to get:
+  - Repo name and default git URL
+  - Created date, last updated date
+  - Whether pristine exists (check filesystem)
+  - List of clones with their names, paths, and creation timestamps
+  - Last sync timestamp (if available)
+  - Default branch name
+- [ ] Format output to show:
+  - Vault entries (all repos)
+  - Pristine status (initialized or not)
+  - Clone instances with metadata (name, path, created date)
+- [ ] Handle cases where metadata is missing or corrupted gracefully
+
+### 7.2 List Command Handler
+- [ ] Create `src/commands/list.rs` module
+- [ ] Implement `handle_list()` function
+- [ ] Call `operations::list::list_all_repos()`
+- [ ] Format output in a readable way (table or tree structure)
+- [ ] Support optional filtering (e.g., show only repos with pristines, show only repos with clones)
+- [ ] Update `main.rs` to call handler in List match arm
+- [ ] Add CLI argument parsing for list options (if needed)
+
+### 7.3 Phase 7 Unit Tests
+- [ ] Write unit tests for list operation (vault loading, metadata reading, status detection)
+- [ ] Write unit tests for list command handler (output formatting, filtering)
+- [ ] Write integration tests for list command with various repo states
+- [ ] Ensure tests run in CI
+
+## Phase 8: Destroy Command
+
+### 8.1 Destroy Operation
 - [ ] Create `src/operations/destroy.rs` module
 - [ ] Implement `destroy_clone(clone_name: &str, config: &Config)` function
 - [ ] Find clone in metadata (search clones array)
@@ -159,7 +193,7 @@ This roadmap breaks down the implementation into small, single-point stories tha
 - [ ] Keep repo in vault (don't remove from vault.json)
 - [ ] Optionally clear pristine reference in metadata
 
-### 7.2 Destroy Command Handler
+### 8.2 Destroy Command Handler
 - [ ] Create `src/commands/destroy.rs` module
 - [ ] Implement `handle_destroy()` function
 - [ ] Determine if target is a clone or pristine (check if exists in clones array vs pristines)
@@ -167,15 +201,15 @@ This roadmap breaks down the implementation into small, single-point stories tha
 - [ ] Update `main.rs` to call handler in Destroy match arm
 - [ ] Add validation and error messages
 
-### 7.3 Phase 7 Unit Tests
+### 8.3 Phase 8 Unit Tests
 - [ ] Write unit tests for destroy operations (clone and pristine destruction)
 - [ ] Write unit tests for destroy command handler
 - [ ] Write integration tests for destroy operations
 - [ ] Ensure tests run in CI
 
-## Phase 8: Sync Command (Parallel Implementation)
+## Phase 9: Sync Command (Parallel Implementation)
 
-### 8.1 Sync Operation
+### 9.1 Sync Operation
 - [ ] Create `src/operations/sync.rs` module
 - [ ] Implement `sync_pristine(pristine_name: &str, config: &Config)` function
 - [ ] Load metadata to get git URL (use default from git_url[0])
@@ -183,29 +217,29 @@ This roadmap breaks down the implementation into small, single-point stories tha
 - [ ] Update metadata with last_sync timestamp (manual)
 - [ ] Handle errors (network, conflicts, etc.)
 
-### 8.2 Sync Command Handler (Sequential First)
+### 9.2 Sync Command Handler (Sequential First)
 - [ ] Create `src/commands/sync.rs` module
 - [ ] Implement `handle_sync()` function
 - [ ] If pristine provided, sync single repo
 - [ ] If no pristine, get all repos with pristines and sync each sequentially
 - [ ] Update `main.rs` to call handler in Sync match arm
 
-### 8.3 Parallel Sync Implementation
+### 9.3 Parallel Sync Implementation
 - [ ] Refactor `handle_sync()` to use `tokio::task::spawn_blocking` for each repo
 - [ ] Spawn one task per repo (parallel execution)
 - [ ] Collect all task handles
 - [ ] Wait for all tasks and report success/failure per repo
 - [ ] Show progress/output per repo as they complete
 
-### 8.4 Phase 8 Unit Tests
+### 9.4 Phase 9 Unit Tests
 - [ ] Write unit tests for sync operation (fetch, update, error handling)
 - [ ] Write unit tests for sync command handler (single repo, all repos)
 - [ ] Write integration tests for parallel sync execution
 - [ ] Ensure tests run in CI
 
-## Phase 9: Agent - Basic Infrastructure
+## Phase 10: Agent - Basic Infrastructure
 
-### 9.1 Agent Process Management
+### 10.1 Agent Process Management
 - [ ] Create `src/agent.rs` module
 - [ ] Implement `agent_pid_file_path(config)` to get path for PID file
 - [ ] Implement `is_agent_running(config)` to check if agent process exists
@@ -213,7 +247,7 @@ This roadmap breaks down the implementation into small, single-point stories tha
 - [ ] Implement `stop_agent(config)` to kill agent process
 - [ ] Implement `get_agent_status(config)` to return running/stopped status
 
-### 9.2 Agent Command Handler
+### 10.2 Agent Command Handler
 - [ ] Create `src/commands/agent.rs` module
 - [ ] Implement `handle_agent(action: &str, config: &Config)` function
 - [ ] Handle "start" action (check if already running, spawn if not)
@@ -222,28 +256,28 @@ This roadmap breaks down the implementation into small, single-point stories tha
 - [ ] Update `main.rs` to call handler in Agent match arm
 - [ ] Add validation for action parameter
 
-### 9.3 Agent Main Loop (Stub)
+### 10.3 Agent Main Loop (Stub)
 - [ ] Create agent entry point (separate binary or flag)
 - [ ] Implement basic agent loop that runs continuously
 - [ ] Add sleep interval (hardcoded for now)
 - [ ] Add graceful shutdown on SIGTERM/SIGINT
 
-### 9.4 Phase 9 Unit Tests
+### 10.4 Phase 10 Unit Tests
 - [ ] Write unit tests for agent process management
 - [ ] Write unit tests for agent command handler
 - [ ] Write integration tests for agent lifecycle
 - [ ] Ensure tests run in CI
 
-## Phase 10: Agent - Periodic Polling
+## Phase 11: Agent - Periodic Polling
 
-### 10.1 Tag Checking
+### 11.1 Tag Checking
 - [ ] Implement `check_for_new_tag(repo_name: &str, config: &Config)` in operations
 - [ ] Load metadata to get current version and git URL (use default from git_url[0])
 - [ ] Use git2 to list remote tags (like `git ls-remote --tags`)
 - [ ] Compare latest remote tag with stored version in metadata
 - [ ] Return Option<String> for new version if found
 
-### 10.2 Agent Polling Loop
+### 11.2 Agent Polling Loop
 - [ ] In agent main loop, get all vaulted repos
 - [ ] For each repo, spawn `check_for_new_tag()` task (parallel)
 - [ ] If new tag found, update metadata with new version
@@ -251,60 +285,60 @@ This roadmap breaks down the implementation into small, single-point stories tha
 - [ ] Use per-repo sync_interval from metadata (or default)
 - [ ] Sleep between polling cycles
 
-### 10.3 Auto-Sync on New Version (Optional)
+### 11.3 Auto-Sync on New Version (Optional)
 - [ ] Add option to auto-sync when new version detected
 - [ ] Call `sync_pristine()` when new tag found
 - [ ] Make this configurable per-repo in metadata
 
-### 10.4 Phase 10 Unit Tests
+### 11.4 Phase 11 Unit Tests
 - [ ] Write unit tests for tag checking operations
 - [ ] Write unit tests for agent polling loop
 - [ ] Write integration tests for periodic polling
 - [ ] Ensure tests run in CI
 
-## Phase 11: Code Organization & Polish
+## Phase 12: Code Organization & Polish
 
-### 11.1 Extract Command Handlers
+### 12.1 Extract Command Handlers
 - [ ] Move all command match arms to separate handler functions in command modules
 - [ ] Clean up `main.rs` to just parse and route
 - [ ] Ensure all error handling is consistent
 
-### 11.2 Error Handling Improvements
+### 12.2 Error Handling Improvements
 - [ ] Create custom error types in `src/error.rs`
 - [ ] Use `thiserror` or `anyhow::Context` for better error messages
 - [ ] Add context to all error returns
 - [ ] Ensure user-friendly error messages
 
-### 11.3 Logging
+### 12.3 Logging
 - [ ] Add `tracing` or `log` crate
 - [ ] Replace `println!` with proper logging
 - [ ] Add log levels (info, warn, error)
 - [ ] Write agent logs to `~/.repoman/logs/`
 
-### 11.4 Phase 11 Unit Tests
+### 12.4 Phase 12 Unit Tests
 - [ ] Write unit tests for error handling improvements
 - [ ] Write unit tests for logging functionality
 - [ ] Ensure all tests pass with new error types
 - [ ] Ensure tests run in CI
 
-## Phase 12: Future Enhancements (Post-Beta)
+## Phase 13: Future Enhancements (Post-Beta)
 
-### 12.1 Hooks System
+### 13.1 Hooks System
 - [ ] Define hook configuration in metadata
 - [ ] Implement hook execution before/after operations
 - [ ] Support async hooks
 
-### 12.2 Plugin System
+### 13.2 Plugin System
 - [ ] Add Lua integration (mlua crate)
 - [ ] Implement plugin discovery in `~/.repoman/plugins/`
 - [ ] Add plugin command routing
 
-### 12.3 Job Queue
+### 13.3 Job Queue
 - [ ] Implement job queue for agent
 - [ ] Allow CLI to enqueue jobs instead of executing directly
 - [ ] Agent processes queue in background
 
-### 12.4 Additional Features
+### 13.4 Additional Features
 - [ ] Build configuration support
 - [ ] Branch tracking
 - [ ] README extraction
@@ -317,8 +351,9 @@ This roadmap breaks down the implementation into small, single-point stories tha
 - **Unit tests must be written at the end of each phase and run in CI**
 - Parallel implementations (init, sync) should be done after sequential versions work
 - Agent can be basic for beta, full queue system can come later
-- Focus on core operations first (add, init, clone, destroy, sync) before agent features
+- Focus on core operations first (add, init, clone, list, destroy, sync) before agent features
 - **git_url is stored as Vec<String> with element 0 being the default remote**
 - **Clone operations use reference clones for space efficiency**
 - **Multiple remotes are supported with console warnings when detected**
+- **List command provides visibility into vault status, pristines, and clones with metadata**
 
