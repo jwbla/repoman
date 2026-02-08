@@ -8,10 +8,10 @@ The repoman client is the FE cli tool that submits jobs to the BE and can provid
 ### Agent
 The repoman agent is the BE that performs all of the actual work.  It performs operations in parallel per repo.
 
-## Concepts
+## High Level Concepts
 **Vault** A centralized list of repository URLs with accompanying metadata, stored in `~/.repoman/vault/vault.json`.
 **Pristine** A clean, local, read-only copy of a repo from the vault, stored in `~/.repoman/pristines/<repo-name>/` as git reference clones for space efficiency. These are the "source of truth" and should never be modified directly.
-**Clone** A working copy created from a pristine for feature work, stored in `~/.repoman/clones/<repo-name>-<clone-name>/`. These are disposable workspaces.
+**Clone** A working copy created from a pristine for feature work, stored in `~/.repoman/clones/<repo-name>-<clone-name>/`. These are disposable workspaces, and are created as git ref clones so as to be lightweight.
 
 ## Operations
 ### Add
@@ -24,10 +24,20 @@ repoman add <git url>
 ```sh
 repoman add
 ```
+### Init
+#### Description
+Create pristine(s) of a vaulted repository using vault name.
+#### Examples
+```sh
+repoman init <vault-name>
+```
+```sh
+repoman init 
+```
 
 ### Clone
 #### Description
-Create clone from a pristine. Clone name is auto-generated if not provided.
+Create clone from a pristine (pristine must be init-ed first, well error if not). Clone name is auto-generated (format: pristinename-guide) if not provided.
 #### Examples
 ```sh
 repoman clone <pristine> [<clone-name>]
@@ -44,20 +54,9 @@ repoman destroy <clone>
 repoman destroy <pristine>
 ```
 
-### Init
-#### Description
-Create pristine(s) of a vaulted repository using vault name.
-#### Examples
-```sh
-repoman init <vault-name>
-```
-```sh
-repoman init 
-```
-
 ### Sync
 #### Description
-Update pristine(s) from origin
+Update pristine(s) from origin.  If no pristine is provided sync all.
 #### Examples
 ```sh
 repoman sync 
@@ -68,7 +67,7 @@ repoman sync <pristine>
 
 ### Agent
 #### Description
-Start/stop background agent
+Start/stop or collect status info on background agent
 #### Examples
 ```sh
 repoman agent start|stop|status
@@ -84,7 +83,7 @@ repoman <plugin-name> <plugin-command>
 
 ## Hooks
 ### Async
-Hooks can specify async operations that don't block subsequent commands. Example: Salesforce scratch org provisioning can run async while build proceeds.
+Hooks can specify async operations that don't block subsequent commands. Example: Salesforce scratch org provisioning can run async while build proceeds.  Can take a dependency on other lifecycle hooks or async hooks (ie, do not run until hook x is completed)
 
 ### Pre Clone
 Executed before cloning
@@ -128,11 +127,11 @@ Configuration stored in `~/.config/repoman/config.yaml` with paths for:
 
 ## Use Cases
 - **Build from source**: Vault code after building and installing, save disk space
-- **Disposable workspaces**: Create experimental workspaces for LLM testing or feature development
+- **Disposable workspaces**: Create experimental workspaces for LLM testing or feature development (similar to git worktrees)
 - **Master repository list**: Maintain list of software/repos without keeping all on disk
 - **QA someone's branch**: Quick clone and test workflow
 - **Fresh copy for LLM**: Clean environment for AI-assisted development
-- Background garbage collection for git repos
+- Background maintenance for git repos (GC, branch fetching, merge conflict detection)
 - Mirror to external systems (Gitea, etc.)
 - Auto-deploy changes
 - Auto-merge capability for clones

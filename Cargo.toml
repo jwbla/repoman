@@ -1,14 +1,23 @@
 [package]
 name = "repoman"
-version = "0.1.0"
+version = "0.2.1"
 edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
+chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5.51", features = ["derive"] }
 dirs = "6.0.0"
 git2 = "0.20.2"
+log = "0.4.29"
+rand = "0.8"
+semver = "1.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 serde_yaml = "0.9.34"
+simplelog = "0.12.2"
+thiserror = "1.0"
 tokio = { version = "1.48.0", features = ["full"] }
+
+[dev-dependencies]
+tempfile = "3.10"
