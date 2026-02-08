@@ -21,13 +21,12 @@ pub fn find_path(target: &str, config: &Config) -> Result<PathBuf> {
 
     // 2. Check clone suffixes in metadata
     for repo_name in vault.get_all_names() {
-        if let Ok(metadata) = Metadata::load(repo_name, config) {
-            if let Some(clone_entry) = metadata.get_clone(target) {
-                if clone_entry.path.exists() {
-                    debug!("find_path: '{}' resolved to clone {}", target, clone_entry.path.display());
-                    return Ok(clone_entry.path.clone());
-                }
-            }
+        if let Ok(metadata) = Metadata::load(repo_name, config)
+            && let Some(clone_entry) = metadata.get_clone(target)
+            && clone_entry.path.exists()
+        {
+            debug!("find_path: '{}' resolved to clone {}", target, clone_entry.path.display());
+            return Ok(clone_entry.path.clone());
         }
     }
 

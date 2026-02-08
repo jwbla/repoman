@@ -57,11 +57,11 @@ pub fn setup_credentials<'a>(
 
         // (3) Token from env var, else credential helper
         if allowed_types.contains(git2::CredentialType::USER_PASS_PLAINTEXT) {
-            if let Some(ref env_var) = token_env_var {
-                if let Ok(token) = std::env::var(env_var) {
-                    debug!("{} credentials: using token from env var {}", label, env_var);
-                    return git2::Cred::userpass_plaintext("git", &token);
-                }
+            if let Some(ref env_var) = token_env_var
+                && let Ok(token) = std::env::var(env_var)
+            {
+                debug!("{} credentials: using token from env var {}", label, env_var);
+                return git2::Cred::userpass_plaintext("git", &token);
             }
             if let Some(username) = username_from_url {
                 debug!("{} credentials: trying credential helper for '{}'", label, username);

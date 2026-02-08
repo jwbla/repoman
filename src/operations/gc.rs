@@ -53,16 +53,16 @@ pub fn find_stale_clones(days: u64, config: &Config) -> Result<Vec<StaleClone>> 
             };
 
             let commit_ts = chrono::DateTime::from_timestamp(head_time.seconds(), 0);
-            if let Some(ts) = commit_ts {
-                if ts < cutoff {
-                    let days_old = (Utc::now() - ts).num_days();
-                    stale.push(StaleClone {
-                        repo_name: repo_name.to_string(),
-                        clone_name: clone_entry.name.clone(),
-                        path: clone_entry.path.clone(),
-                        days_old,
-                    });
-                }
+            if let Some(ts) = commit_ts
+                && ts < cutoff
+            {
+                let days_old = (Utc::now() - ts).num_days();
+                stale.push(StaleClone {
+                    repo_name: repo_name.to_string(),
+                    clone_name: clone_entry.name.clone(),
+                    path: clone_entry.path.clone(),
+                    days_old,
+                });
             }
         }
     }

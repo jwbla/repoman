@@ -160,14 +160,13 @@ fn init_logging(config: &Config, verbose: bool) {
 
     // File logger: always enabled at debug level for diagnosing issues
     let log_path = config.logs_dir.join("repoman.log");
-    if let Ok(()) = std::fs::create_dir_all(&config.logs_dir) {
-        if let Ok(file) = std::fs::OpenOptions::new()
+    if let Ok(()) = std::fs::create_dir_all(&config.logs_dir)
+        && let Ok(file) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&log_path)
-        {
-            loggers.push(WriteLogger::new(LevelFilter::Debug, LogConfig::default(), file));
-        }
+    {
+        loggers.push(WriteLogger::new(LevelFilter::Debug, LogConfig::default(), file));
     }
 
     if !loggers.is_empty() {

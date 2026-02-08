@@ -91,14 +91,13 @@ pub fn get_detailed_status(name: &str, config: &Config) -> Result<DetailedStatus
 
     // Get pristine branches
     let mut pristine_branches = Vec::new();
-    if pristine_exists {
-        if let Ok(repo) = Repository::open_bare(&pristine_path) {
-            if let Ok(branches) = repo.branches(Some(git2::BranchType::Local)) {
-                for branch in branches.flatten() {
-                    if let Some(name) = branch.0.name().ok().flatten() {
-                        pristine_branches.push(name.to_string());
-                    }
-                }
+    if pristine_exists
+        && let Ok(repo) = Repository::open_bare(&pristine_path)
+        && let Ok(branches) = repo.branches(Some(git2::BranchType::Local))
+    {
+        for branch in branches.flatten() {
+            if let Some(name) = branch.0.name().ok().flatten() {
+                pristine_branches.push(name.to_string());
             }
         }
     }
@@ -115,32 +114,31 @@ pub fn get_detailed_status(name: &str, config: &Config) -> Result<DetailedStatus
             behind: 0,
         };
 
-        if clone_entry.path.exists() {
-            if let Ok(repo) = Repository::open(&clone_entry.path) {
-                // Current branch
-                if let Ok(head) = repo.head() {
-                    cs.branch = head.shorthand().map(String::from);
+        if clone_entry.path.exists()
+            && let Ok(repo) = Repository::open(&clone_entry.path)
+        {
+            // Current branch
+            if let Ok(head) = repo.head() {
+                cs.branch = head.shorthand().map(String::from);
 
-                    // Ahead/behind
-                    if let (Ok(local_oid), Ok(remote_ref)) = (
-                        head.target().ok_or(()),
-                        repo.find_reference(
-                            &format!("refs/remotes/origin/{}", cs.branch.as_deref().unwrap_or("")),
-                        ).map_err(|_| ()),
-                    ) {
-                        if let Some(remote_oid) = remote_ref.target() {
-                            if let Ok((ahead, behind)) = repo.graph_ahead_behind(local_oid, remote_oid) {
-                                cs.ahead = ahead;
-                                cs.behind = behind;
-                            }
-                        }
-                    }
+                // Ahead/behind
+                if let (Ok(local_oid), Ok(remote_ref)) = (
+                    head.target().ok_or(()),
+                    repo.find_reference(
+                        &format!("refs/remotes/origin/{}", cs.branch.as_deref().unwrap_or("")),
+                    ).map_err(|_| ()),
+                )
+                    && let Some(remote_oid) = remote_ref.target()
+                    && let Ok((ahead, behind)) = repo.graph_ahead_behind(local_oid, remote_oid)
+                {
+                    cs.ahead = ahead;
+                    cs.behind = behind;
                 }
+            }
 
-                // Dirty state
-                if let Ok(statuses) = repo.statuses(None) {
-                    cs.dirty_files = statuses.len();
-                }
+            // Dirty state
+            if let Ok(statuses) = repo.statuses(None) {
+                cs.dirty_files = statuses.len();
             }
         }
 
@@ -151,14 +149,14 @@ pub fn get_detailed_status(name: &str, config: &Config) -> Result<DetailedStatus
     let mut alternates_ok = true;
     for clone_entry in &metadata.clones {
         let alt_file = clone_entry.path.join(".git").join("objects").join("info").join("alternates");
-        if alt_file.exists() {
-            if let Ok(content) = std::fs::read_to_string(&alt_file) {
-                for line in content.lines() {
-                    let alt_path = PathBuf::from(line.trim());
-                    if !alt_path.exists() {
-                        warn!("alternates path missing for clone '{}': {}", clone_entry.name, alt_path.display());
-                        alternates_ok = false;
-                    }
+        if alt_file.exists()
+            && let Ok(content) = std::fs::read_to_string(&alt_file)
+        {
+            for line in content.lines() {
+                let alt_path = PathBuf::from(line.trim());
+                if !alt_path.exists() {
+                    warn!("alternates path missing for clone '{}': {}", clone_entry.name, alt_path.display());
+                    alternates_ok = false;
                 }
             }
         }
