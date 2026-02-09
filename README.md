@@ -136,7 +136,3 @@ All directories are created automatically on first run.
 ## Logs
 
 Debug logs are written to `~/.repoman/logs/repoman.log` on every run. Use `--debug` to also print them to the console.
-
-## License
-
-MIT
