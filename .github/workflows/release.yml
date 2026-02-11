@@ -1,16 +1,19 @@
-name: CI
+name: Release
 
 on:
   push:
-    branches: [master]
-  pull_request:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-test-package:
-    name: ${{ matrix.os }}
+  build-assets:
+    name: Build assets (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -31,19 +34,8 @@ jobs:
         run: brew install openssl libssh2
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
 
       - uses: Swatinem/rust-cache@v2
-
-      - name: Build
-        run: cargo build
-
-      - name: Test
-        run: cargo test
-
-      - name: Clippy
-        run: cargo clippy -- -D warnings
 
       - name: Build release binary
         run: cargo build --release
@@ -52,7 +44,7 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          tar -czf "dist/repoman-${{ runner.os }}-x86_64.tar.gz" -C target/release repoman
+          tar -czf "dist/repoman-${{ runner.os }}-x86_64-${{ github.ref_name }}.tar.gz" -C target/release repoman
 
       - name: Install WiX Toolset (Windows)
         if: runner.os == 'Windows'
@@ -75,12 +67,31 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          Compress-Archive -Path target/release/repoman.exe -DestinationPath dist/repoman-windows-x86_64.zip -Force
+          Compress-Archive -Path target/release/repoman.exe -DestinationPath "dist/repoman-windows-x86_64-${{ github.ref_name }}.zip" -Force
           Copy-Item -Path target/wix/*.msi -Destination dist/
 
-      - name: Upload CI artifacts
+      - name: Upload build assets
         uses: actions/upload-artifact@v4
         with:
-          name: repoman-${{ runner.os }}-${{ github.sha }}
+          name: repoman-${{ runner.os }}-${{ github.ref_name }}
           path: dist/*
           if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: build-assets
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-assets/**/*.tar.gz
+            release-assets/**/*.zip
+            release-assets/**/*.msi
+          generate_release_notes: true

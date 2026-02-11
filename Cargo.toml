@@ -1,7 +1,15 @@
 [package]
 name = "repoman"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
+authors = ["Repoman Contributors"]
+description = "A git repository manager built around disposable workspaces"
+
+[package.metadata.wix]
+manufacturer = "Repoman Contributors"
+product-name = "Repoman"
+upgrade-guid = "A17BA9AA-B5E5-4D7F-8D4A-B847AFA528E2"
+path-guid = "F7B77A85-AAD8-4094-B446-54F40D84E790"
 
 [dependencies]
 anyhow = "1.0.100"

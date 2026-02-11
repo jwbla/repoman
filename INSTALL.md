@@ -2,6 +2,21 @@
 
 ## Quick Install
 
+### From GitHub Releases (Tagged Versions)
+
+Download a prebuilt artifact from GitHub Releases:
+- Linux/macOS: `repoman-<OS>-x86_64-<tag>.tar.gz`
+- Windows: `repoman-windows-x86_64-<tag>.zip` or `.msi` installer
+
+### From GitHub Actions CI (Any Successful Run)
+
+Use this when you want a build from a commit that is not yet tagged:
+1. Open a successful CI run in GitHub Actions
+2. Download the artifact for your OS
+3. Extract and install:
+   - Linux/macOS: unpack and move `repoman` into a PATH directory
+   - Windows: run the `.msi` installer or use the `.zip` binary
+
 ### From Source (Local)
 
 ```bash

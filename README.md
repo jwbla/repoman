@@ -93,6 +93,21 @@ cargo test
 
 ## Install
 
+### From GitHub Releases (prebuilt)
+
+Download assets from the Releases page for tagged versions:
+- Linux/macOS: `repoman-<OS>-x86_64-<tag>.tar.gz`
+- Windows: `repoman-windows-x86_64-<tag>.zip` or `.msi` installer
+
+### From GitHub Actions CI artifacts (latest build)
+
+If you want a build from an untagged commit:
+1. Open the latest successful CI run
+2. Download the artifacts bundle for your OS
+3. Extract and run/install:
+   - Linux/macOS: unpack the `.tar.gz` and place `repoman` on your PATH
+   - Windows: use the `.zip` binary or run the `.msi` installer
+
 ### cargo install (recommended)
 
 ```sh
