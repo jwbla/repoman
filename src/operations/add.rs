@@ -11,7 +11,10 @@ use crate::vault::{Vault, extract_repo_name};
 /// Returns Vec<String> with the default remote URL as the first element
 pub fn detect_current_repo_urls() -> Result<Vec<String>> {
     let current_dir = env::current_dir()?;
-    debug!("detect_current_repo_urls: scanning {}", current_dir.display());
+    debug!(
+        "detect_current_repo_urls: scanning {}",
+        current_dir.display()
+    );
 
     // Try to open the current directory as a git repository
     let repo =
@@ -99,22 +102,23 @@ pub fn add_repo(url: Option<String>, config: &Config) -> Result<String> {
     let urls: Vec<String>;
     let detected_from_current: bool;
 
-    match url {
-        Some(u) => {
-            urls = vec![u];
-            detected_from_current = false;
-        }
-        None => {
-            urls = detect_current_repo_urls()?;
-            detected_from_current = true;
-        }
+    if let Some(u) = url {
+        urls = vec![u];
+        detected_from_current = false;
+    } else {
+        urls = detect_current_repo_urls()?;
+        detected_from_current = true;
     }
 
-    debug!("add_repo: resolved {} url(s), detected_from_cwd={}", urls.len(), detected_from_current);
+    debug!(
+        "add_repo: resolved {} url(s), detected_from_cwd={}",
+        urls.len(),
+        detected_from_current
+    );
 
     // Warn about multiple remotes
     if detected_from_current && urls.len() > 1 {
-        let default_url = urls.first().map(|s| s.as_str()).unwrap_or("");
+        let default_url = urls.first().map_or("", std::string::String::as_str);
         println!(
             "Multiple remotes detected. Adding all remotes with '{}' as default.",
             default_url
@@ -138,10 +142,13 @@ pub fn add_repo(url: Option<String>, config: &Config) -> Result<String> {
     vault.save(config)?;
 
     // Create metadata directory and save metadata
-    let default_url_owned = default_url.to_string();
+    let default_url_owned = default_url.clone();
     let metadata = Metadata::new(urls);
     metadata.save(&repo_name, config)?;
 
-    info!("add_repo: '{}' added to vault (url={})", repo_name, default_url_owned);
+    info!(
+        "add_repo: '{}' added to vault (url={})",
+        repo_name, default_url_owned
+    );
     Ok(repo_name)
 }

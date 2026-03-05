@@ -1,15 +1,18 @@
 use git2::{FetchOptions, RemoteCallbacks, build::RepoBuilder};
+use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, error, info};
+use std::cell::RefCell;
 use std::path::PathBuf;
 
+use super::credentials;
 use crate::config::Config;
 use crate::error::{RepomanError, Result, git_error_with_context};
+use crate::hooks;
 use crate::metadata::Metadata;
 use crate::vault::Vault;
-use super::credentials;
 
 /// Initialize a pristine (reference clone) for a single repository
-pub fn init_pristine(repo_name: &str, config: &Config) -> Result<PathBuf> {
+pub fn init_pristine(repo_name: &str, depth: Option<i32>, config: &Config) -> Result<PathBuf> {
     info!("init_pristine: starting for '{}'", repo_name);
 
     // Check if repo exists in vault
@@ -26,12 +29,18 @@ pub fn init_pristine(repo_name: &str, config: &Config) -> Result<PathBuf> {
         .ok_or_else(|| RepomanError::InvalidRepoUrl(repo_name.to_string()))?
         .to_string();
 
-    debug!("init_pristine: git url for '{}' is '{}'", repo_name, git_url);
+    debug!(
+        "init_pristine: git url for '{}' is '{}'",
+        repo_name, git_url
+    );
 
     // Check if pristine already exists
     let pristine_path = config.pristines_dir.join(repo_name);
     if pristine_path.exists() {
-        error!("init_pristine: pristine already exists at {}", pristine_path.display());
+        error!(
+            "init_pristine: pristine already exists at {}",
+            pristine_path.display()
+        );
         return Err(RepomanError::PristineAlreadyExists(repo_name.to_string()));
     }
 
@@ -40,16 +49,18 @@ pub fn init_pristine(repo_name: &str, config: &Config) -> Result<PathBuf> {
     let cred_attempts = std::cell::Cell::new(0u32);
     let mut callbacks = RemoteCallbacks::new();
 
+    // Auth: config overrides metadata
+    let effective_auth = config.effective_auth(repo_name, &metadata);
     credentials::setup_credentials(
         &mut callbacks,
         &cred_attempts,
-        metadata.auth_config.as_ref(),
+        effective_auth.as_ref(),
         "init",
     );
 
-    // Transfer progress — log/print at ~5% intervals to avoid flooding.
-    let last_pct = std::cell::Cell::new(0u32);
-    callbacks.transfer_progress(|stats| {
+    // Transfer progress with indicatif progress bar
+    let pb: RefCell<Option<ProgressBar>> = RefCell::new(None);
+    callbacks.transfer_progress(move |stats| {
         let received = stats.received_objects();
         let indexed = stats.indexed_objects();
         let total = stats.total_objects();
@@ -60,23 +71,30 @@ pub fn init_pristine(repo_name: &str, config: &Config) -> Result<PathBuf> {
             return true;
         }
 
-        // During receive phase, report based on received objects.
-        // During index phase (received == total), report based on indexed objects.
-        let (phase, done, label) = if received < total {
-            ("receiving", received, "receiving")
+        let mut pb_ref = pb.borrow_mut();
+        let bar = pb_ref.get_or_insert_with(|| {
+            let bar = ProgressBar::new(total as u64);
+            bar.set_style(
+                ProgressStyle::default_bar()
+                    .template("  {bar:40.cyan/blue} {pos}/{len} ({msg})")
+                    .unwrap_or_else(|_| ProgressStyle::default_bar()),
+            );
+            bar
+        });
+
+        let (phase, done) = if received < total {
+            ("receiving", received)
         } else {
-            ("indexing", indexed, "indexing")
+            ("indexing", indexed)
         };
 
-        let pct = (done as f64 / total as f64 * 100.0) as u32;
-        let prev = last_pct.get();
+        bar.set_position(done as u64);
+        bar.set_message(format!("{} {:.1} MiB", phase, mb));
 
-        // Log at every 5% step, and once at 100%
-        if pct >= prev + 5 || (pct == 100 && prev != 100) {
-            last_pct.set(pct);
-            debug!("init transfer: {} {}/{} objects ({:.1} MiB)", phase, done, total, mb);
-            eprint!("\r  {}: {}% ({}/{}), {:.1} MiB   ", label, pct, done, total, mb);
+        if indexed == total && total > 0 {
+            bar.finish_and_clear();
         }
+
         true
     });
 
@@ -95,51 +113,49 @@ pub fn init_pristine(repo_name: &str, config: &Config) -> Result<PathBuf> {
     let mut fetch_opts = FetchOptions::new();
     fetch_opts.remote_callbacks(callbacks);
 
+    // Apply shallow clone depth if requested
+    let effective_depth = depth.or_else(|| {
+        config
+            .repo_config(repo_name)
+            .and_then(|r| r.clone_defaults.as_ref())
+            .and_then(|cd| cd.shallow)
+            .and_then(|shallow| if shallow { Some(1) } else { None })
+    });
+    if let Some(d) = effective_depth {
+        fetch_opts.depth(d);
+        debug!("init_pristine: using shallow depth={}", d);
+    }
+
     // Clone the repository (bare clone for pristine)
     let mut builder = RepoBuilder::new();
     builder.bare(true);
     builder.fetch_options(fetch_opts);
 
     println!("Cloning {} into pristine...", repo_name);
-    info!("init_pristine: cloning '{}' -> {}", git_url, pristine_path.display());
+    info!(
+        "init_pristine: cloning '{}' -> {}",
+        git_url,
+        pristine_path.display()
+    );
 
-    builder
-        .clone(&git_url, &pristine_path)
-        .map_err(|e| {
-            eprintln!(); // newline after progress output
-            error!("init_pristine: clone failed for '{}': {}", repo_name, e);
-            git_error_with_context(e, repo_name)
-        })?;
-
-    eprintln!(); // newline after progress output
+    builder.clone(&git_url, &pristine_path).map_err(|e| {
+        error!("init_pristine: clone failed for '{}': {}", repo_name, e);
+        git_error_with_context(e, repo_name)
+    })?;
 
     // Update metadata
     metadata.mark_pristine_created();
     metadata.save(repo_name, config)?;
 
-    info!("init_pristine: pristine created at {}", pristine_path.display());
+    hooks::run_post_init_pristine(config, repo_name, &pristine_path)?;
+
+    info!(
+        "init_pristine: pristine created at {}",
+        pristine_path.display()
+    );
     println!("Pristine created: {}", pristine_path.display());
 
     Ok(pristine_path)
-}
-
-/// Initialize pristines for all vaulted repositories
-/// Returns a Vec of (repo_name, Result) tuples
-#[allow(dead_code)]
-pub fn init_all_pristines(config: &Config) -> Vec<(String, Result<PathBuf>)> {
-    let vault = match Vault::load(config) {
-        Ok(v) => v,
-        Err(e) => return vec![("vault".to_string(), Err(e))],
-    };
-
-    vault
-        .get_all_names()
-        .into_iter()
-        .map(|name| {
-            let result = init_pristine(name, config);
-            (name.to_string(), result)
-        })
-        .collect()
 }
 
 /// Get list of repos that need initialization (not yet pristined)
@@ -156,6 +172,9 @@ pub fn get_uninitialized_repos(config: &Config) -> Result<Vec<String>> {
         .map(String::from)
         .collect();
 
-    debug!("get_uninitialized_repos: found {} repos needing init", uninitialized.len());
+    debug!(
+        "get_uninitialized_repos: found {} repos needing init",
+        uninitialized.len()
+    );
     Ok(uninitialized)
 }

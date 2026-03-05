@@ -1,13 +1,16 @@
 use chrono::{DateTime, Utc};
+use colored::Colorize;
+use serde::Serialize;
 use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::error::Result;
 use crate::metadata::{CloneEntry, Metadata};
+use crate::util;
 use crate::vault::Vault;
 
 /// Status of a repository in the system
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct RepoStatus {
     pub name: String,
     pub url: String,
@@ -67,52 +70,72 @@ pub fn format_repo_status(status: &RepoStatus) -> String {
     let mut output = String::new();
 
     // Header with name and URL
-    output.push_str(&format!("  {} \n", status.name));
-    output.push_str(&format!("    URL: {}\n", status.url));
+    output.push_str(&format!("  {} \n", status.name.cyan()));
+    output.push_str(&format!("    {} {}\n", "URL:".bold(), status.url));
     output.push_str(&format!(
-        "    Added: {}\n",
+        "    {} {}\n",
+        "Added:".bold(),
         status.added_date.format("%Y-%m-%d %H:%M")
     ));
 
     // Pristine status
     if status.has_pristine {
-        output.push_str("    Pristine: ✓ initialized\n");
+        output.push_str(&format!(
+            "    {} {} initialized\n",
+            "Pristine:".bold(),
+            "✓".green()
+        ));
         if let Some(path) = &status.pristine_path {
-            output.push_str(&format!("      Path: {}\n", path.display()));
+            output.push_str(&format!("      {} {}\n", "Path:".bold(), path.display()));
         }
         if let Some(created) = status.pristine_created {
             output.push_str(&format!(
-                "      Created: {}\n",
+                "      {} {}\n",
+                "Created:".bold(),
                 created.format("%Y-%m-%d %H:%M")
             ));
         }
     } else {
-        output.push_str("    Pristine: ✗ not initialized\n");
+        output.push_str(&format!(
+            "    {} {} not initialized\n",
+            "Pristine:".bold(),
+            "✗".red()
+        ));
     }
 
     // Last sync
     if let Some(sync_time) = status.last_sync {
         output.push_str(&format!(
-            "    Last sync: {}\n",
-            sync_time.format("%Y-%m-%d %H:%M")
+            "    {} {} ({})\n",
+            "Last sync:".bold(),
+            sync_time.format("%Y-%m-%d %H:%M"),
+            util::relative_time(&sync_time)
         ));
     }
 
     // Default branch
     if let Some(branch) = &status.default_branch {
-        output.push_str(&format!("    Default branch: {}\n", branch));
+        output.push_str(&format!(
+            "    {} {}\n",
+            "Default branch:".bold(),
+            branch.yellow()
+        ));
     }
 
     // Latest tag
     if let Some(tag) = &status.latest_tag {
-        output.push_str(&format!("    Latest tag: {}\n", tag));
+        output.push_str(&format!("    {} {}\n", "Latest tag:".bold(), tag));
     }
 
     // Clones
     if status.clones.is_empty() {
-        output.push_str("    Clones: none\n");
+        output.push_str(&format!("    {} none\n", "Clones:".bold()));
     } else {
-        output.push_str(&format!("    Clones: {} total\n", status.clones.len()));
+        output.push_str(&format!(
+            "    {} {} total\n",
+            "Clones:".bold(),
+            status.clones.len()
+        ));
         for clone in &status.clones {
             output.push_str(&format!(
                 "      - {} ({})\n",
@@ -120,7 +143,8 @@ pub fn format_repo_status(status: &RepoStatus) -> String {
                 clone.path.display()
             ));
             output.push_str(&format!(
-                "        Created: {}\n",
+                "        {} {}\n",
+                "Created:".bold(),
                 clone.created.format("%Y-%m-%d %H:%M")
             ));
         }
@@ -140,36 +164,55 @@ pub fn format_summary(statuses: &[RepoStatus]) -> String {
     // Header
     output.push_str(&format!(
         "{:<20} {:<12} {:<8} {:<20}\n",
-        "NAME", "PRISTINE", "CLONES", "LAST SYNC"
+        "NAME".bold(),
+        "PRISTINE".bold(),
+        "CLONES".bold(),
+        "LAST SYNC".bold()
     ));
     output.push_str(&format!("{}\n", "-".repeat(64)));
 
     for status in statuses {
-        let pristine_status = if status.has_pristine { "✓" } else { "✗" };
+        let pristine_status = if status.has_pristine {
+            "✓".green().to_string()
+        } else {
+            "✗".red().to_string()
+        };
         let clone_count = status.clones.len().to_string();
-        let last_sync = status
-            .last_sync
-            .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
-            .unwrap_or_else(|| "never".to_string());
+        let last_sync = status.last_sync.map_or_else(
+            || "never".to_string(),
+            |t| {
+                format!(
+                    "{} ({})",
+                    t.format("%Y-%m-%d %H:%M"),
+                    util::relative_time(&t)
+                )
+            },
+        );
 
         output.push_str(&format!(
             "{:<20} {:<12} {:<8} {:<20}\n",
-            truncate_string(&status.name, 18),
+            truncate_string(&status.name, 18).cyan(),
             pristine_status,
             clone_count,
             last_sync
         ));
+
+        // Show clone names and paths indented under the repo
+        for clone in &status.clones {
+            output.push_str(&format!(
+                "  {}-{}  {}\n",
+                status.name,
+                clone.name,
+                clone.path.display()
+            ));
+        }
     }
 
     output
 }
 
 fn truncate_string(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len - 3])
-    }
+    util::truncate(s, max_len)
 }
 
 #[cfg(test)]
@@ -186,6 +229,10 @@ mod tests {
             clones_dir: base.join("clones"),
             plugins_dir: base.join("plugins"),
             logs_dir: base.join("logs"),
+            agent_heartbeat_interval: None,
+            json_output: None,
+            max_parallel: None,
+            repos: None,
         };
         std::fs::create_dir_all(&config.vault_dir).unwrap();
         std::fs::create_dir_all(&config.pristines_dir).unwrap();
@@ -331,11 +378,13 @@ mod tests {
                     name: "clone1".to_string(),
                     path: PathBuf::from("/path/clone1"),
                     created: Utc::now(),
+                    upstream_conflicts: false,
                 },
                 CloneEntry {
                     name: "clone2".to_string(),
                     path: PathBuf::from("/path/clone2"),
                     created: Utc::now(),
+                    upstream_conflicts: false,
                 },
             ],
             last_sync: None,

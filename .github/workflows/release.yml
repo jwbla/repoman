@@ -13,12 +13,28 @@ env:
 
 jobs:
   build-assets:
-    name: Build assets (${{ matrix.os }})
+    name: Build assets (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset_os: linux
+            asset_arch: x86_64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            asset_os: macos
+            asset_arch: x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset_os: macos
+            asset_arch: aarch64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset_os: windows
+            asset_arch: x86_64
 
     steps:
       - uses: actions/checkout@v4
@@ -34,17 +50,20 @@ jobs:
         run: brew install openssl libssh2
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
 
       - name: Build release binary
-        run: cargo build --release
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package release archive (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          tar -czf "dist/repoman-${{ runner.os }}-x86_64-${{ github.ref_name }}.tar.gz" -C target/release repoman
+          tar -czf "dist/repoman-${{ matrix.asset_os }}-${{ matrix.asset_arch }}-${{ github.ref_name }}.tar.gz" \
+            -C target/${{ matrix.target }}/release repoman
 
       - name: Install WiX Toolset (Windows)
         if: runner.os == 'Windows'
@@ -67,13 +86,13 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          Compress-Archive -Path target/release/repoman.exe -DestinationPath "dist/repoman-windows-x86_64-${{ github.ref_name }}.zip" -Force
+          Compress-Archive -Path target/${{ matrix.target }}/release/repoman.exe -DestinationPath "dist/repoman-${{ matrix.asset_os }}-${{ matrix.asset_arch }}-${{ github.ref_name }}.zip" -Force
           Copy-Item -Path target/wix/*.msi -Destination dist/
 
       - name: Upload build assets
         uses: actions/upload-artifact@v4
         with:
-          name: repoman-${{ runner.os }}-${{ github.ref_name }}
+          name: repoman-${{ matrix.asset_os }}-${{ matrix.asset_arch }}-${{ github.ref_name }}
           path: dist/*
           if-no-files-found: error
 

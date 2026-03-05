@@ -1,6 +1,7 @@
 use chrono::Utc;
 use git2::Repository;
 use log::{debug, info, warn};
+use serde::Serialize;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -9,6 +10,7 @@ use crate::error::Result;
 use crate::metadata::Metadata;
 use crate::vault::Vault;
 
+#[derive(Serialize)]
 pub struct StaleClone {
     pub repo_name: String,
     pub clone_name: String,
@@ -16,6 +18,7 @@ pub struct StaleClone {
     pub days_old: i64,
 }
 
+#[derive(Serialize)]
 pub struct GcReport {
     pub stale_clones: Vec<StaleClone>,
     pub pristines_gc_run: usize,
@@ -43,7 +46,8 @@ pub fn find_stale_clones(days: u64, config: &Config) -> Result<Vec<StaleClone>> 
                 Err(_) => continue,
             };
 
-            let head_time = match repo.head()
+            let head_time = match repo
+                .head()
                 .ok()
                 .and_then(|h| h.peel_to_commit().ok())
                 .map(|c| c.time())
@@ -70,7 +74,7 @@ pub fn find_stale_clones(days: u64, config: &Config) -> Result<Vec<StaleClone>> 
     Ok(stale)
 }
 
-/// Run `git gc --auto` on each pristine bare repo.
+/// Run `git gc --auto` on each pristine bare repo, then repack alternates for clones.
 fn gc_pristines(config: &Config, dry_run: bool) -> Result<usize> {
     let vault = Vault::load(config)?;
     let mut count = 0;
@@ -94,15 +98,46 @@ fn gc_pristines(config: &Config, dry_run: bool) -> Result<usize> {
             .output()
         {
             Ok(output) => {
-                if !output.status.success() {
+                if output.status.success() {
+                    count += 1;
+                } else {
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     warn!("gc: git gc failed for '{}': {}", repo_name, stderr.trim());
-                } else {
-                    count += 1;
                 }
             }
             Err(e) => {
                 warn!("gc: failed to run git gc for '{}': {}", repo_name, e);
+            }
+        }
+
+        // Repack alternates: run `git repack -adl` on clones using this pristine
+        if let Ok(metadata) = Metadata::load(repo_name, config) {
+            for clone_entry in &metadata.clones {
+                if clone_entry.path.exists() {
+                    debug!("gc: repacking alternates for clone '{}'", clone_entry.name);
+                    match Command::new("git")
+                        .args(["repack", "-adl"])
+                        .current_dir(&clone_entry.path)
+                        .output()
+                    {
+                        Ok(output) => {
+                            if !output.status.success() {
+                                let stderr = String::from_utf8_lossy(&output.stderr);
+                                debug!(
+                                    "gc: repack failed for clone '{}': {}",
+                                    clone_entry.name,
+                                    stderr.trim()
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            debug!(
+                                "gc: failed to run repack for clone '{}': {}",
+                                clone_entry.name, e
+                            );
+                        }
+                    }
+                }
             }
         }
     }
@@ -121,7 +156,11 @@ pub fn run_gc(days: u64, dry_run: bool, config: &Config) -> Result<GcReport> {
         // Actually remove stale clones
         for sc in &stale_clones {
             if sc.path.exists() {
-                info!("gc: removing stale clone '{}' at {}", sc.clone_name, sc.path.display());
+                info!(
+                    "gc: removing stale clone '{}' at {}",
+                    sc.clone_name,
+                    sc.path.display()
+                );
                 let _ = std::fs::remove_dir_all(&sc.path);
 
                 // Update metadata

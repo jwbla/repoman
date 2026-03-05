@@ -157,8 +157,15 @@ echo $SSH_AUTH_SOCK
 # The agent needs this same value when it starts
 ```
 
-## TODO
+## Per-Repo SSH Key Configuration
 
-- [ ] Investigate per-repo SSH key configuration in metadata
-- [ ] Add support for SSH key path override via config
-- [ ] Consider integrating with system keyring directly
+Per-repo SSH key paths are supported via config:
+
+```yaml
+repos:
+  my-repo:
+    auth:
+      ssh_key_path: ~/.ssh/id_ed25519_work
+```
+
+The config auth is merged with metadata auth via `config.effective_auth()`. See [Configuration](manual/configuration.md) for details.

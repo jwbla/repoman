@@ -1,11 +1,14 @@
 use git2::{FetchOptions, RemoteCallbacks, Repository};
+use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, error, info};
+use std::cell::RefCell;
 
+use super::credentials;
 use crate::config::Config;
 use crate::error::{RepomanError, Result, git_error_with_context};
+use crate::hooks;
 use crate::metadata::Metadata;
 use crate::vault::Vault;
-use super::credentials;
 
 /// Sync (fetch/update) a single pristine from its origin
 pub fn sync_pristine(pristine_name: &str, config: &Config) -> Result<()> {
@@ -21,7 +24,10 @@ pub fn sync_pristine(pristine_name: &str, config: &Config) -> Result<()> {
     // Check if pristine exists
     let pristine_path = config.pristines_dir.join(pristine_name);
     if !pristine_path.exists() {
-        error!("sync_pristine: pristine not found at {}", pristine_path.display());
+        error!(
+            "sync_pristine: pristine not found at {}",
+            pristine_path.display()
+        );
         return Err(RepomanError::PristineNotFound(pristine_name.to_string()));
     }
 
@@ -36,23 +42,28 @@ pub fn sync_pristine(pristine_name: &str, config: &Config) -> Result<()> {
         .default_url()
         .ok_or_else(|| RepomanError::InvalidRepoUrl(pristine_name.to_string()))?;
 
-    debug!("sync_pristine: fetching '{}' from '{}'", pristine_name, origin_url);
+    debug!(
+        "sync_pristine: fetching '{}' from '{}'",
+        pristine_name, origin_url
+    );
     println!("Syncing {} from {}...", pristine_name, origin_url);
 
     // Attempt counter declared before callbacks for correct drop order.
     let cred_attempts = std::cell::Cell::new(0u32);
     let mut callbacks = RemoteCallbacks::new();
 
+    // Auth: config overrides metadata
+    let effective_auth = config.effective_auth(pristine_name, &metadata);
     credentials::setup_credentials(
         &mut callbacks,
         &cred_attempts,
-        metadata.auth_config.as_ref(),
+        effective_auth.as_ref(),
         "sync",
     );
 
-    // Transfer progress — log at ~5% intervals.
-    let last_pct = std::cell::Cell::new(0u32);
-    callbacks.transfer_progress(|stats| {
+    // Transfer progress with indicatif progress bar
+    let pb: RefCell<Option<ProgressBar>> = RefCell::new(None);
+    callbacks.transfer_progress(move |stats| {
         let received = stats.received_objects();
         let indexed = stats.indexed_objects();
         let total = stats.total_objects();
@@ -63,19 +74,30 @@ pub fn sync_pristine(pristine_name: &str, config: &Config) -> Result<()> {
             return true;
         }
 
+        let mut pb_ref = pb.borrow_mut();
+        let bar = pb_ref.get_or_insert_with(|| {
+            let bar = ProgressBar::new(total as u64);
+            bar.set_style(
+                ProgressStyle::default_bar()
+                    .template("  {bar:40.cyan/blue} {pos}/{len} ({msg})")
+                    .unwrap_or_else(|_| ProgressStyle::default_bar()),
+            );
+            bar
+        });
+
         let (phase, done) = if received < total {
             ("receiving", received)
         } else {
             ("indexing", indexed)
         };
 
-        let pct = (done as f64 / total as f64 * 100.0) as u32;
-        let prev = last_pct.get();
+        bar.set_position(done as u64);
+        bar.set_message(format!("{} {:.1} MiB", phase, mb));
 
-        if pct >= prev + 5 || (pct == 100 && prev != 100) {
-            last_pct.set(pct);
-            debug!("sync transfer: {} {}/{} objects ({:.1} MiB)", phase, done, total, mb);
+        if indexed == total && total > 0 {
+            bar.finish_and_clear();
         }
+
         true
     });
 
@@ -94,13 +116,12 @@ pub fn sync_pristine(pristine_name: &str, config: &Config) -> Result<()> {
     fetch_opts.remote_callbacks(callbacks);
 
     // Find or create origin remote
-    let mut remote = match repo.find_remote("origin") {
-        Ok(r) => r,
-        Err(_) => {
-            debug!("sync_pristine: origin remote missing, creating it");
-            repo.remote("origin", origin_url)?;
-            repo.find_remote("origin")?
-        }
+    let mut remote = if let Ok(r) = repo.find_remote("origin") {
+        r
+    } else {
+        debug!("sync_pristine: origin remote missing, creating it");
+        repo.remote("origin", origin_url)?;
+        repo.find_remote("origin")?
     };
 
     // Fetch all branches and tags
@@ -119,6 +140,8 @@ pub fn sync_pristine(pristine_name: &str, config: &Config) -> Result<()> {
     metadata.mark_synced("manual");
     metadata.save(pristine_name, config)?;
 
+    hooks::run_post_sync(config, pristine_name, &pristine_path)?;
+
     info!("sync_pristine: sync complete for '{}'", pristine_name);
     println!("Sync complete for {}", pristine_name);
 
@@ -127,7 +150,6 @@ pub fn sync_pristine(pristine_name: &str, config: &Config) -> Result<()> {
 
 /// Sync all pristines
 /// Returns a Vec of (repo_name, Result) tuples
-#[allow(dead_code)]
 pub fn sync_all_pristines(config: &Config) -> Vec<(String, Result<()>)> {
     let vault = match Vault::load(config) {
         Ok(v) => v,
@@ -162,7 +184,10 @@ pub fn get_syncable_repos(config: &Config) -> Result<Vec<String>> {
         .map(String::from)
         .collect();
 
-    debug!("get_syncable_repos: found {} repos with pristines", syncable.len());
+    debug!(
+        "get_syncable_repos: found {} repos with pristines",
+        syncable.len()
+    );
     Ok(syncable)
 }
 
@@ -187,10 +212,12 @@ pub fn check_for_new_tag(pristine_name: &str, config: &Config) -> Result<Option<
     let attempts = std::cell::Cell::new(0u32);
     let mut callbacks = RemoteCallbacks::new();
 
+    // Auth: config overrides metadata
+    let effective_auth = config.effective_auth(pristine_name, &metadata);
     credentials::setup_credentials(
         &mut callbacks,
         &attempts,
-        metadata.auth_config.as_ref(),
+        effective_auth.as_ref(),
         "tag-check",
     );
 
@@ -200,7 +227,10 @@ pub fn check_for_new_tag(pristine_name: &str, config: &Config) -> Result<Option<
     remote
         .connect_auth(git2::Direction::Fetch, Some(callbacks), None)
         .map_err(|e| {
-            error!("check_for_new_tag: failed to connect to remote for '{}': {}", pristine_name, e);
+            error!(
+                "check_for_new_tag: failed to connect to remote for '{}': {}",
+                pristine_name, e
+            );
             git_error_with_context(e, pristine_name)
         })?;
 
@@ -223,7 +253,9 @@ pub fn check_for_new_tag(pristine_name: &str, config: &Config) -> Result<Option<
 
     // Semver-aware sort: parse tags, sort semver properly, non-semver alphabetically first
     fn strip_v(t: &str) -> &str {
-        t.strip_prefix('v').or_else(|| t.strip_prefix('V')).unwrap_or(t)
+        t.strip_prefix('v')
+            .or_else(|| t.strip_prefix('V'))
+            .unwrap_or(t)
     }
 
     let mut semver_tags: Vec<(&str, semver::Version)> = Vec::new();
@@ -237,14 +269,14 @@ pub fn check_for_new_tag(pristine_name: &str, config: &Config) -> Result<Option<
         }
     }
 
-    other_tags.sort();
+    other_tags.sort_unstable();
     semver_tags.sort_by(|a, b| a.1.cmp(&b.1));
 
     // Latest = last semver tag if any, else last alphabetical
     let latest_tag = semver_tags
         .last()
-        .map(|(name, _)| name.to_string())
-        .or_else(|| other_tags.last().map(|s| s.to_string()));
+        .map(|(name, _)| (*name).to_string())
+        .or_else(|| other_tags.last().map(|s| (*s).to_string()));
 
     debug!(
         "check_for_new_tag: '{}' current={:?} latest={:?}",
@@ -252,13 +284,16 @@ pub fn check_for_new_tag(pristine_name: &str, config: &Config) -> Result<Option<
     );
 
     // Compare with current
-    if latest_tag != current_tag {
+    if latest_tag == current_tag {
+        Ok(None)
+    } else {
         if let Some(ref tag) = latest_tag {
-            info!("check_for_new_tag: new tag found for '{}': {}", pristine_name, tag);
+            info!(
+                "check_for_new_tag: new tag found for '{}': {}",
+                pristine_name, tag
+            );
         }
         Ok(latest_tag)
-    } else {
-        Ok(None)
     }
 }
 

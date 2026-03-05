@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use thiserror::Error;
 
-const AUTH_HELP: &str = r#"
+const AUTH_HELP: &str = r"
 
 SSH authentication failed. Your SSH key may not be loaded in the agent.
 
@@ -20,7 +20,7 @@ To fix this, try one of:
 
   4. For HTTPS repos, configure git credential helper:
      $ git config --global credential.helper cache
-"#;
+";
 
 #[derive(Error, Debug)]
 pub enum RepomanError {
@@ -87,18 +87,20 @@ pub enum RepomanError {
     #[error("Failed to spawn agent process: {0}")]
     AgentSpawnError(String),
 
-    #[allow(dead_code)]
     #[error("Configuration error: {0}")]
     ConfigError(String),
 
     #[error("Alias '{0}' not found")]
     AliasNotFound(String),
 
-    #[error("Fast-forward failed for clone '{0}': {1}")]
-    FastForwardFailed(String, String),
-
     #[error("Branch '{0}' not found in pristine '{1}'")]
     BranchNotFound(String, String),
+
+    #[error("Hook '{0}' failed: {1}")]
+    HookFailed(String, String),
+
+    #[error("{0}")]
+    Other(String),
 }
 
 pub type Result<T> = std::result::Result<T, RepomanError>;

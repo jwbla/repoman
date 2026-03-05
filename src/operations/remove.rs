@@ -18,7 +18,10 @@ pub fn remove_repo(name: &str, config: &Config) -> Result<()> {
         return Err(RepomanError::RepoNotInVault(canonical));
     }
 
-    info!("remove_repo: removing '{}' (resolved from '{}')", canonical, name);
+    info!(
+        "remove_repo: removing '{}' (resolved from '{}')",
+        canonical, name
+    );
 
     // Load metadata (best-effort) and destroy all clones from disk
     if let Ok(metadata) = Metadata::load(&canonical, config) {
@@ -26,7 +29,11 @@ pub fn remove_repo(name: &str, config: &Config) -> Result<()> {
             if clone.path.exists() {
                 println!("  Removing clone: {}", clone.path.display());
                 if let Err(e) = fs::remove_dir_all(&clone.path) {
-                    warn!("remove_repo: failed to remove clone '{}': {}", clone.path.display(), e);
+                    warn!(
+                        "remove_repo: failed to remove clone '{}': {}",
+                        clone.path.display(),
+                        e
+                    );
                 }
             }
         }
@@ -37,7 +44,11 @@ pub fn remove_repo(name: &str, config: &Config) -> Result<()> {
     if pristine_path.exists() {
         println!("  Removing pristine: {}", pristine_path.display());
         if let Err(e) = fs::remove_dir_all(&pristine_path) {
-            warn!("remove_repo: failed to remove pristine '{}': {}", pristine_path.display(), e);
+            warn!(
+                "remove_repo: failed to remove pristine '{}': {}",
+                pristine_path.display(),
+                e
+            );
         }
     }
 
@@ -46,7 +57,11 @@ pub fn remove_repo(name: &str, config: &Config) -> Result<()> {
     if metadata_dir.exists() {
         println!("  Removing metadata: {}", metadata_dir.display());
         if let Err(e) = fs::remove_dir_all(&metadata_dir) {
-            warn!("remove_repo: failed to remove metadata dir '{}': {}", metadata_dir.display(), e);
+            warn!(
+                "remove_repo: failed to remove metadata dir '{}': {}",
+                metadata_dir.display(),
+                e
+            );
         }
     }
 
@@ -78,6 +93,10 @@ mod tests {
             clones_dir: base.join("clones"),
             plugins_dir: base.join("plugins"),
             logs_dir: base.join("logs"),
+            agent_heartbeat_interval: None,
+            json_output: None,
+            max_parallel: None,
+            repos: None,
         };
         fs::create_dir_all(&config.vault_dir).unwrap();
         fs::create_dir_all(&config.pristines_dir).unwrap();
@@ -87,7 +106,12 @@ mod tests {
 
     fn setup_repo(config: &Config, name: &str) {
         let mut vault = Vault::load(config).unwrap_or_default();
-        vault.add_entry(name.to_string(), format!("https://example.com/{}.git", name)).unwrap();
+        vault
+            .add_entry(
+                name.to_string(),
+                format!("https://example.com/{}.git", name),
+            )
+            .unwrap();
         vault.save(config).unwrap();
 
         let mut metadata = Metadata::new(vec![format!("https://example.com/{}.git", name)]);
@@ -111,7 +135,9 @@ mod tests {
 
         // Add an alias
         let mut vault = Vault::load(&config).unwrap();
-        vault.add_alias("tr".to_string(), "test-repo".to_string()).unwrap();
+        vault
+            .add_alias("tr".to_string(), "test-repo".to_string())
+            .unwrap();
         vault.save(&config).unwrap();
 
         // Remove
@@ -145,8 +171,12 @@ mod tests {
         setup_repo(&config, "my-repo");
 
         let mut vault = Vault::load(&config).unwrap();
-        vault.add_alias("mr".to_string(), "my-repo".to_string()).unwrap();
-        vault.add_alias("myrepo".to_string(), "my-repo".to_string()).unwrap();
+        vault
+            .add_alias("mr".to_string(), "my-repo".to_string())
+            .unwrap();
+        vault
+            .add_alias("myrepo".to_string(), "my-repo".to_string())
+            .unwrap();
         vault.save(&config).unwrap();
 
         remove_repo("my-repo", &config).unwrap();
@@ -161,7 +191,9 @@ mod tests {
         setup_repo(&config, "my-repo");
 
         let mut vault = Vault::load(&config).unwrap();
-        vault.add_alias("mr".to_string(), "my-repo".to_string()).unwrap();
+        vault
+            .add_alias("mr".to_string(), "my-repo".to_string())
+            .unwrap();
         vault.save(&config).unwrap();
 
         // Remove using the alias
@@ -178,7 +210,9 @@ mod tests {
 
         // Add to vault but don't create pristine or clones
         let mut vault = Vault::default();
-        vault.add_entry("bare-repo".to_string(), "url".to_string()).unwrap();
+        vault
+            .add_entry("bare-repo".to_string(), "url".to_string())
+            .unwrap();
         vault.save(&config).unwrap();
 
         // Should succeed without errors (best-effort removal)

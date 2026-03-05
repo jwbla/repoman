@@ -100,7 +100,7 @@ cargo build --release --target x86_64-unknown-linux-musl
 ## Dependencies
 
 Building requires:
-- Rust 1.70+ (install via [rustup](https://rustup.rs))
+- Rust 1.85+ (install via [rustup](https://rustup.rs))
 - OpenSSL development headers
 - libssh2 development headers
 
@@ -147,7 +147,7 @@ Create `~/.config/repoman/config.yaml` to customize paths:
 vault_dir: ~/.repoman/vault
 pristines_dir: ~/.repoman/pristines
 clones_dir: ~/.repoman/clones
-plugins_dir: ~/.repoman/plugins
+plugins_dir: ~/.config/repoman/plugins
 logs_dir: ~/.repoman/logs
 ```
 
