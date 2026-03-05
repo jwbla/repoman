@@ -253,10 +253,11 @@ mod tests {
             home.join(".repoman").join("pristines")
         );
         assert_eq!(config.clones_dir, home.join(".repoman").join("clones"));
-        assert_eq!(
-            config.plugins_dir,
-            home.join(".config").join("repoman").join("plugins")
+        let expected_plugins = dirs::config_dir().map_or_else(
+            || home.join(".config").join("repoman").join("plugins"),
+            |c| c.join("repoman").join("plugins"),
         );
+        assert_eq!(config.plugins_dir, expected_plugins);
         assert_eq!(config.logs_dir, home.join(".repoman").join("logs"));
     }
 

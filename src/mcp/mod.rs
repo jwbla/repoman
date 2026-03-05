@@ -3,7 +3,6 @@ mod resources;
 mod tools;
 
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::io::FromRawFd;
 
 use log::debug;
 use serde_json::{Value, json};
@@ -12,14 +11,12 @@ use crate::config::Config;
 
 use protocol::{INTERNAL_ERROR, METHOD_NOT_FOUND, error_response, success_response};
 
-/// Run the MCP server over stdio.
-///
-/// JSON-RPC requests arrive on stdin (one per line). Responses are written to
-/// the **real** stdout fd. At startup we redirect fd 1 → fd 2 (stderr) so that
-/// any `println!()` inside existing operations is harmlessly sent to stderr
-/// rather than corrupting the JSON-RPC stream.
-pub fn run_mcp_server(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
-    // Save the real stdout fd, then redirect fd 1 → stderr.
+/// Save the real stdout and redirect fd 1 → stderr so that stray `println!()`
+/// calls don't corrupt the JSON-RPC stream. Returns a `File` wrapping the
+/// original stdout.
+#[cfg(unix)]
+fn capture_real_stdout() -> Result<std::fs::File, Box<dyn std::error::Error>> {
+    use std::os::unix::io::FromRawFd;
     let real_stdout_fd = unsafe { libc::dup(1) };
     if real_stdout_fd < 0 {
         return Err("failed to dup stdout".into());
@@ -27,9 +24,39 @@ pub fn run_mcp_server(config: &Config) -> Result<(), Box<dyn std::error::Error>>
     unsafe {
         libc::dup2(2, 1);
     }
+    Ok(unsafe { std::fs::File::from_raw_fd(real_stdout_fd) })
+}
 
-    // We'll write JSON-RPC output to the saved fd.
-    let mut out = unsafe { std::fs::File::from_raw_fd(real_stdout_fd) };
+#[cfg(windows)]
+fn capture_real_stdout() -> Result<std::fs::File, Box<dyn std::error::Error>> {
+    use std::os::windows::io::{AsRawHandle, FromRawHandle, RawHandle};
+
+    extern "system" {
+        fn SetStdHandle(nStdHandle: u32, hHandle: RawHandle) -> i32;
+    }
+
+    const STD_OUTPUT_HANDLE: u32 = 0xFFFF_FFF5; // -11i32 as u32
+    const STD_ERROR_HANDLE: u32 = 0xFFFF_FFF4; // -12i32 as u32
+
+    unsafe {
+        // Grab the real stdout handle before we overwrite it
+        let real_stdout = std::io::stdout().as_raw_handle();
+        let stderr = std::io::stderr().as_raw_handle();
+        if SetStdHandle(STD_OUTPUT_HANDLE, stderr) == 0 {
+            return Err("failed to redirect stdout to stderr".into());
+        }
+        Ok(std::fs::File::from_raw_handle(real_stdout))
+    }
+}
+
+/// Run the MCP server over stdio.
+///
+/// JSON-RPC requests arrive on stdin (one per line). Responses are written to
+/// the **real** stdout fd. At startup we redirect fd 1 → fd 2 (stderr) so that
+/// any `println!()` inside existing operations is harmlessly sent to stderr
+/// rather than corrupting the JSON-RPC stream.
+pub fn run_mcp_server(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
+    let mut out = capture_real_stdout()?;
 
     let stdin = std::io::stdin();
     let reader = BufReader::new(stdin.lock());

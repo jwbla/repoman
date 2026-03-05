@@ -21,10 +21,6 @@ jobs:
             asset_os: linux
             asset_arch: x86_64
           - os: macos-latest
-            target: x86_64-apple-darwin
-            asset_os: macos
-            asset_arch: x86_64
-          - os: macos-latest
             target: aarch64-apple-darwin
             asset_os: macos
             asset_arch: aarch64
