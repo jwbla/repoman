@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -34,15 +35,23 @@ impl Vault {
         serde_json::from_str(&contents).map_err(|e| RepomanError::VaultLoadError(e.to_string()))
     }
 
-    /// Save vault to disk
+    /// Save vault to disk (with file locking to prevent concurrent corruption)
     pub fn save(&self, config: &Config) -> Result<()> {
         let vault_path = config.vault_dir.join("vault.json");
+        let lock_path = config.vault_dir.join(".vault.lock");
+
+        let lock_file = std::fs::File::create(&lock_path)
+            .map_err(|e| RepomanError::VaultSaveError(e.to_string()))?;
+        lock_file
+            .lock_exclusive()
+            .map_err(|e| RepomanError::VaultSaveError(format!("lock failed: {}", e)))?;
 
         let contents = serde_json::to_string_pretty(self)
             .map_err(|e| RepomanError::VaultSaveError(e.to_string()))?;
 
         std::fs::write(&vault_path, contents)
             .map_err(|e| RepomanError::VaultSaveError(e.to_string()))
+        // lock released on drop
     }
 
     /// Add a new entry to the vault
@@ -62,7 +71,9 @@ impl Vault {
 
     /// Resolve an alias to its canonical name, or return the input unchanged.
     pub fn resolve_name<'a>(&'a self, name: &'a str) -> &'a str {
-        self.aliases.get(name).map(|s| s.as_str()).unwrap_or(name)
+        self.aliases
+            .get(name)
+            .map_or(name, std::string::String::as_str)
     }
 
     /// Get entry by name (resolves aliases transparently)
@@ -176,6 +187,10 @@ mod tests {
             clones_dir: base.join("clones"),
             plugins_dir: base.join("plugins"),
             logs_dir: base.join("logs"),
+            agent_heartbeat_interval: None,
+            json_output: None,
+            max_parallel: None,
+            repos: None,
         };
         std::fs::create_dir_all(&config.vault_dir).unwrap();
         (temp_dir, config)
@@ -370,9 +385,15 @@ mod tests {
         vault
             .add_entry("repo2".to_string(), "url2".to_string())
             .unwrap();
-        vault.add_alias("r1".to_string(), "repo1".to_string()).unwrap();
-        vault.add_alias("r1-short".to_string(), "repo1".to_string()).unwrap();
-        vault.add_alias("r2".to_string(), "repo2".to_string()).unwrap();
+        vault
+            .add_alias("r1".to_string(), "repo1".to_string())
+            .unwrap();
+        vault
+            .add_alias("r1-short".to_string(), "repo1".to_string())
+            .unwrap();
+        vault
+            .add_alias("r2".to_string(), "repo2".to_string())
+            .unwrap();
 
         let removed = vault.remove_aliases_for("repo1");
         assert_eq!(removed.len(), 2);

@@ -13,7 +13,7 @@ pub fn handle_agent(action: &str, config: &Config) -> Result<()> {
             println!("Agent stopped");
         }
         "status" => {
-            let status = agent::get_agent_status(config)?;
+            let status = agent::get_agent_status(config);
             println!("{}", status);
         }
         _ => {

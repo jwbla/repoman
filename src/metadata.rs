@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -10,29 +11,14 @@ pub struct CloneEntry {
     pub name: String,
     pub path: PathBuf,
     pub created: DateTime<Utc>,
+    #[serde(default)]
+    pub upstream_conflicts: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SyncInfo {
     pub timestamp: DateTime<Utc>,
     pub sync_type: String, // "auto" or "manual"
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct BuildConfig {
-    pub command: Option<String>,
-    pub pre_build: Option<String>,
-    pub post_build: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct HookConfig {
-    pub pre_clone: Option<String>,
-    pub post_clone: Option<String>,
-    pub pre_build: Option<String>,
-    pub post_build: Option<String>,
-    pub pre_destroy: Option<String>,
-    pub post_destroy: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -50,11 +36,8 @@ pub struct Metadata {
     pub default_branch: Option<String>,
     pub tracked_branches: Vec<String>,
     pub clones: Vec<CloneEntry>,
-    pub readme: Option<String>,
     pub sync_interval: Option<u64>, // seconds between syncs
     pub last_sync: Option<SyncInfo>,
-    pub build_config: Option<BuildConfig>,
-    pub hook_config: Option<HookConfig>,
     pub auth_config: Option<AuthConfig>,
     pub latest_tag: Option<String>,
     pub pristine_created: Option<DateTime<Utc>>,
@@ -70,11 +53,8 @@ impl Default for Metadata {
             default_branch: None,
             tracked_branches: Vec::new(),
             clones: Vec::new(),
-            readme: None,
             sync_interval: None,
             last_sync: None,
-            build_config: None,
-            hook_config: None,
             auth_config: None,
             latest_tag: None,
             pristine_created: None,
@@ -93,11 +73,8 @@ impl Metadata {
             default_branch: None,
             tracked_branches: Vec::new(),
             clones: Vec::new(),
-            readme: None,
             sync_interval: Some(3600), // default 1 hour
             last_sync: None,
-            build_config: None,
-            hook_config: None,
             auth_config: None,
             latest_tag: None,
             pristine_created: None,
@@ -122,10 +99,17 @@ impl Metadata {
             .map_err(|e| RepomanError::MetadataLoadError(repo_name.to_string(), e.to_string()))
     }
 
-    /// Save metadata to disk for a given repo
+    /// Save metadata to disk for a given repo (with file locking)
     pub fn save(&self, repo_name: &str, config: &Config) -> Result<()> {
         let metadata_dir = config.vault_dir.join(repo_name);
         std::fs::create_dir_all(&metadata_dir)?;
+
+        let lock_path = metadata_dir.join(".metadata.lock");
+        let lock_file = std::fs::File::create(&lock_path)
+            .map_err(|e| RepomanError::MetadataSaveError(repo_name.to_string(), e.to_string()))?;
+        lock_file
+            .lock_exclusive()
+            .map_err(|e| RepomanError::MetadataSaveError(repo_name.to_string(), e.to_string()))?;
 
         let metadata_path = metadata_dir.join("metadata.json");
         let contents = serde_json::to_string_pretty(self)
@@ -133,11 +117,12 @@ impl Metadata {
 
         std::fs::write(&metadata_path, contents)
             .map_err(|e| RepomanError::MetadataSaveError(repo_name.to_string(), e.to_string()))
+        // lock released on drop
     }
 
     /// Get the default (primary) git URL
     pub fn default_url(&self) -> Option<&str> {
-        self.git_urls.first().map(|s| s.as_str())
+        self.git_urls.first().map(std::string::String::as_str)
     }
 
     /// Update the last_updated timestamp
@@ -151,6 +136,7 @@ impl Metadata {
             name,
             path,
             created: Utc::now(),
+            upstream_conflicts: false,
         });
         self.touch();
     }
@@ -200,6 +186,10 @@ mod tests {
             clones_dir: base.join("clones"),
             plugins_dir: base.join("plugins"),
             logs_dir: base.join("logs"),
+            agent_heartbeat_interval: None,
+            json_output: None,
+            max_parallel: None,
+            repos: None,
         };
         std::fs::create_dir_all(&config.vault_dir).unwrap();
         (temp_dir, config)

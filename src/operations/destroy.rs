@@ -2,11 +2,12 @@ use log::{debug, info, warn};
 use std::fs;
 use std::path::PathBuf;
 
+use super::gc;
 use crate::config::Config;
 use crate::error::{RepomanError, Result};
+use crate::hooks;
 use crate::metadata::Metadata;
 use crate::vault::Vault;
-use super::gc;
 
 /// Destroy a clone
 /// Removes the clone from disk and updates metadata
@@ -23,6 +24,18 @@ pub fn destroy_clone(clone_name: &str, config: &Config) -> Result<PathBuf> {
                 // Found the clone - get the path before removing
                 let clone_entry = metadata.get_clone(clone_name).unwrap();
                 let clone_path = clone_entry.path.clone();
+                let pristine_path = config.pristines_dir.join(repo_name);
+
+                // Run pre_destroy hook (e.g. backup) while clone still exists
+                if clone_path.exists() {
+                    hooks::run_pre_destroy(
+                        config,
+                        repo_name,
+                        &clone_path,
+                        clone_name,
+                        &pristine_path,
+                    )?;
+                }
 
                 // Remove from filesystem
                 if clone_path.exists() {
@@ -34,6 +47,8 @@ pub fn destroy_clone(clone_name: &str, config: &Config) -> Result<PathBuf> {
                 metadata.remove_clone(clone_name);
                 metadata.save(repo_name, config)?;
 
+                hooks::run_post_destroy(config, repo_name, &config.clones_dir)?;
+
                 println!("Clone '{}' destroyed", clone_name);
                 return Ok(clone_path);
             }
@@ -44,7 +59,7 @@ pub fn destroy_clone(clone_name: &str, config: &Config) -> Result<PathBuf> {
     let clone_path = config.clones_dir.join(clone_name);
     if clone_path.exists() {
         // Try to determine the pristine name from the directory name
-        if let Some(pristine_name) = clone_name
+        let pristine_name_opt: Option<String> = clone_name
             .rsplit('-')
             .skip(1)
             .collect::<Vec<_>>()
@@ -52,26 +67,41 @@ pub fn destroy_clone(clone_name: &str, config: &Config) -> Result<PathBuf> {
             .rev()
             .collect::<Vec<_>>()
             .join("-")
-            .into()
+            .into();
+        if let Some(ref pristine_name) = pristine_name_opt
+            && !pristine_name.is_empty()
         {
-            let pristine_name: String = pristine_name;
-            if !pristine_name.is_empty()
-                && let Ok(mut metadata) = Metadata::load(&pristine_name, config)
+            let pristine_path = config.pristines_dir.join(pristine_name);
+            hooks::run_pre_destroy(
+                config,
+                pristine_name,
+                &clone_path,
+                clone_name,
+                &pristine_path,
+            )?;
+        }
+        if let Some(ref pristine_name) = pristine_name_opt
+            && !pristine_name.is_empty()
+            && let Ok(mut metadata) = Metadata::load(pristine_name, config)
+        {
+            // Try to find by path
+            let clone_suffix = clone_name.strip_prefix(&format!("{}-", pristine_name));
+            if let Some(suffix) = clone_suffix
+                && metadata.get_clone(suffix).is_some()
             {
-                // Try to find by path
-                let clone_suffix = clone_name.strip_prefix(&format!("{}-", pristine_name));
-                if let Some(suffix) = clone_suffix
-                    && metadata.get_clone(suffix).is_some()
-                {
-                    metadata.remove_clone(suffix);
-                    metadata.save(&pristine_name, config)?;
-                }
+                metadata.remove_clone(suffix);
+                metadata.save(pristine_name, config)?;
             }
         }
 
         // Remove the directory even if we couldn't update metadata
         println!("Removing clone directory: {}", clone_path.display());
         fs::remove_dir_all(&clone_path)?;
+        if let Some(ref pristine_name) = pristine_name_opt
+            && !pristine_name.is_empty()
+        {
+            hooks::run_post_destroy(config, pristine_name, &config.clones_dir)?;
+        }
         println!("Clone '{}' destroyed", clone_name);
         return Ok(clone_path);
     }
@@ -143,7 +173,10 @@ pub fn destroy_target(target: &str, config: &Config) -> Result<PathBuf> {
 
 /// Destroy all clones for a given pristine
 pub fn destroy_all_clones(pristine_name: &str, config: &Config) -> Result<Vec<PathBuf>> {
-    info!("destroy_all_clones: destroying all clones for '{}'", pristine_name);
+    info!(
+        "destroy_all_clones: destroying all clones for '{}'",
+        pristine_name
+    );
 
     let vault = Vault::load(config)?;
     if !vault.contains(pristine_name) {
@@ -160,7 +193,11 @@ pub fn destroy_all_clones(pristine_name: &str, config: &Config) -> Result<Vec<Pa
             if path.exists() {
                 println!("Removing clone: {}", path.display());
                 if let Err(e) = fs::remove_dir_all(&path) {
-                    warn!("destroy_all_clones: failed to remove '{}': {}", path.display(), e);
+                    warn!(
+                        "destroy_all_clones: failed to remove '{}': {}",
+                        path.display(),
+                        e
+                    );
                     continue;
                 }
             }
@@ -177,16 +214,28 @@ pub fn destroy_all_clones(pristine_name: &str, config: &Config) -> Result<Vec<Pa
 
 /// Destroy clones whose HEAD commit is older than `days` days
 pub fn destroy_stale_clones(days: u64, config: &Config) -> Result<Vec<PathBuf>> {
-    info!("destroy_stale_clones: destroying clones older than {} days", days);
+    info!(
+        "destroy_stale_clones: destroying clones older than {} days",
+        days
+    );
 
     let stale = gc::find_stale_clones(days, config)?;
     let mut removed = Vec::new();
 
     for sc in &stale {
         if sc.path.exists() {
-            println!("Removing stale clone '{}' ({} days old): {}", sc.clone_name, sc.days_old, sc.path.display());
+            println!(
+                "Removing stale clone '{}' ({} days old): {}",
+                sc.clone_name,
+                sc.days_old,
+                sc.path.display()
+            );
             if let Err(e) = fs::remove_dir_all(&sc.path) {
-                warn!("destroy_stale_clones: failed to remove '{}': {}", sc.path.display(), e);
+                warn!(
+                    "destroy_stale_clones: failed to remove '{}': {}",
+                    sc.path.display(),
+                    e
+                );
                 continue;
             }
         }
@@ -217,7 +266,11 @@ pub fn destroy_all_pristines(config: &Config) -> Result<Vec<PathBuf>> {
         if pristine_path.exists() {
             println!("Removing pristine: {}", pristine_path.display());
             if let Err(e) = fs::remove_dir_all(&pristine_path) {
-                warn!("destroy_all_pristines: failed to remove '{}': {}", pristine_path.display(), e);
+                warn!(
+                    "destroy_all_pristines: failed to remove '{}': {}",
+                    pristine_path.display(),
+                    e
+                );
                 continue;
             }
             removed.push(pristine_path);
@@ -248,6 +301,10 @@ mod tests {
             clones_dir: base.join("clones"),
             plugins_dir: base.join("plugins"),
             logs_dir: base.join("logs"),
+            agent_heartbeat_interval: None,
+            json_output: None,
+            max_parallel: None,
+            repos: None,
         };
         fs::create_dir_all(&config.vault_dir).unwrap();
         fs::create_dir_all(&config.pristines_dir).unwrap();
@@ -405,8 +462,12 @@ mod tests {
         let (_temp, config) = create_test_config();
 
         let mut vault = Vault::default();
-        vault.add_entry("repo1".to_string(), "url1".to_string()).unwrap();
-        vault.add_entry("repo2".to_string(), "url2".to_string()).unwrap();
+        vault
+            .add_entry("repo1".to_string(), "url1".to_string())
+            .unwrap();
+        vault
+            .add_entry("repo2".to_string(), "url2".to_string())
+            .unwrap();
         vault.save(&config).unwrap();
 
         let p1 = config.pristines_dir.join("repo1");
@@ -454,8 +515,12 @@ mod tests {
         let (_temp, config) = create_test_config();
 
         let mut vault = Vault::default();
-        vault.add_entry("repo1".to_string(), "url1".to_string()).unwrap();
-        vault.add_entry("repo2".to_string(), "url2".to_string()).unwrap();
+        vault
+            .add_entry("repo1".to_string(), "url1".to_string())
+            .unwrap();
+        vault
+            .add_entry("repo2".to_string(), "url2".to_string())
+            .unwrap();
         vault.save(&config).unwrap();
 
         // Only create pristine for repo1

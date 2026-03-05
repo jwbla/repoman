@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use crate::config::Config;
 use crate::error::{RepomanError, Result};
+use crate::hooks;
 use crate::metadata::Metadata;
 use crate::vault::Vault;
 
@@ -29,31 +30,44 @@ pub fn clone_from_pristine(
     branch: Option<String>,
     config: &Config,
 ) -> Result<PathBuf> {
-    info!("clone_from_pristine: creating clone from '{}'", pristine_name);
+    info!(
+        "clone_from_pristine: creating clone from '{}'",
+        pristine_name
+    );
 
     // Check if repo exists in vault
     let vault = Vault::load(config)?;
     if !vault.contains(pristine_name) {
-        error!("clone_from_pristine: '{}' not found in vault", pristine_name);
+        error!(
+            "clone_from_pristine: '{}' not found in vault",
+            pristine_name
+        );
         return Err(RepomanError::RepoNotInVault(pristine_name.to_string()));
     }
 
-    // Check if pristine exists
+    // Check if pristine exists — auto-init if missing (lazy init)
     let pristine_path = config.pristines_dir.join(pristine_name);
     if !pristine_path.exists() {
-        error!("clone_from_pristine: pristine not found at {}", pristine_path.display());
-        return Err(RepomanError::PristineNotFound(pristine_name.to_string()));
+        info!("clone_from_pristine: pristine not found, auto-initializing");
+        println!("Pristine not found — initializing from vault...");
+        super::init::init_pristine(pristine_name, None, config)?;
     }
 
     // Generate or use provided clone name
     let clone_suffix = clone_name.unwrap_or_else(generate_clone_suffix);
     let full_clone_name = format!("{}-{}", pristine_name, clone_suffix);
-    debug!("clone_from_pristine: clone name will be '{}'", full_clone_name);
+    debug!(
+        "clone_from_pristine: clone name will be '{}'",
+        full_clone_name
+    );
 
     // Clone path
     let clone_path = config.clones_dir.join(&full_clone_name);
     if clone_path.exists() {
-        error!("clone_from_pristine: clone already exists at {}", clone_path.display());
+        error!(
+            "clone_from_pristine: clone already exists at {}",
+            clone_path.display()
+        );
         return Err(RepomanError::CloneAlreadyExists(full_clone_name));
     }
 
@@ -61,6 +75,8 @@ pub fn clone_from_pristine(
     let mut metadata = Metadata::load(pristine_name, config)?;
 
     println!("Creating clone {} from pristine...", full_clone_name);
+
+    hooks::run_pre_clone(config, pristine_name, &pristine_path)?;
 
     // Create a reference clone from the pristine
     // This uses git's alternates mechanism for space efficiency
@@ -70,7 +86,10 @@ pub fn clone_from_pristine(
     if let Some(ref b) = branch {
         let ref_name = format!("refs/heads/{}", b);
         if pristine_repo.find_reference(&ref_name).is_err() {
-            return Err(RepomanError::BranchNotFound(b.clone(), pristine_name.to_string()));
+            return Err(RepomanError::BranchNotFound(
+                b.clone(),
+                pristine_name.to_string(),
+            ));
         }
     }
 
@@ -95,33 +114,57 @@ pub fn clone_from_pristine(
         pristine_objects.to_string_lossy().as_bytes(),
     )?;
 
-    // Add the pristine as a remote named "origin"
-    let pristine_url = pristine_path.to_string_lossy();
-    clone_repo.remote("origin", &pristine_url)?;
+    // origin → source URL (for user's git push/pull)
+    let source_url = metadata.default_url().ok_or_else(|| {
+        RepomanError::Other(format!(
+            "No source URL found in metadata for '{}'",
+            pristine_name
+        ))
+    })?;
+    clone_repo.remote("origin", source_url)?;
 
-    // Fetch from the pristine
-    let mut remote = clone_repo.find_remote("origin")?;
-    remote.fetch(&["refs/heads/*:refs/remotes/origin/*"], None, None)?;
+    // pristine → local pristine path (for repoman's fast internal ops)
+    clone_repo.remote("pristine", &pristine_path.to_string_lossy())?;
 
-    // Determine which branch to check out
+    // Fetch from pristine (fast, local) into both remote namespaces
+    let mut pristine_remote = clone_repo.find_remote("pristine")?;
+    pristine_remote.fetch(
+        &[
+            "refs/heads/*:refs/remotes/pristine/*",
+            "refs/heads/*:refs/remotes/origin/*",
+        ],
+        None,
+        None,
+    )?;
+
+    // Determine which branch to check out:
+    // 1. Explicit --branch flag
+    // 2. clone_defaults.branch from config
+    // 3. effective_default_branch from config/metadata
+    // 4. HEAD of the pristine
+    let config_branch = config
+        .repo_config(pristine_name)
+        .and_then(|r| r.clone_defaults.as_ref())
+        .and_then(|cd| cd.branch.clone())
+        .or_else(|| config.effective_default_branch(pristine_name, &metadata));
+
     let branch_name = if let Some(ref b) = branch {
         b.as_str()
+    } else if let Some(ref b) = config_branch {
+        b.as_str()
     } else {
-        let short = head_ref
-            .shorthand()
-            .unwrap_or("main");
-        short
-            .strip_prefix("refs/heads/")
-            .unwrap_or(short)
+        let short = head_ref.shorthand().unwrap_or("main");
+        short.strip_prefix("refs/heads/").unwrap_or(short)
     };
     // Owned copy for later use
     let branch_name = branch_name.to_string();
 
-    // Create local branch tracking the remote
+    // Create local branch tracking origin/<branch> so git push/pull work
     let remote_ref_name = format!("refs/remotes/origin/{}", branch_name);
     if let Ok(remote_ref) = clone_repo.find_reference(&remote_ref_name) {
         let commit = remote_ref.peel_to_commit()?;
-        clone_repo.branch(&branch_name, &commit, false)?;
+        let mut local_branch = clone_repo.branch(&branch_name, &commit, false)?;
+        local_branch.set_upstream(Some(&format!("origin/{}", branch_name)))?;
 
         // Set HEAD to the branch
         clone_repo.set_head(&format!("refs/heads/{}", branch_name))?;
@@ -138,15 +181,19 @@ pub fn clone_from_pristine(
     metadata.add_clone(clone_suffix.clone(), clone_path.clone());
     metadata.save(pristine_name, config)?;
 
-    info!("clone_from_pristine: clone created at {}", clone_path.display());
+    hooks::run_post_clone(
+        config,
+        pristine_name,
+        &clone_path,
+        &full_clone_name,
+        &pristine_path,
+    )?;
+
+    info!(
+        "clone_from_pristine: clone created at {}",
+        clone_path.display()
+    );
     println!("Clone created: {}", clone_path.display());
 
     Ok(clone_path)
-}
-
-/// List all clones for a given pristine
-#[allow(dead_code)]
-pub fn list_clones(pristine_name: &str, config: &Config) -> Result<Vec<String>> {
-    let metadata = Metadata::load(pristine_name, config)?;
-    Ok(metadata.clones.iter().map(|c| c.name.clone()).collect())
 }

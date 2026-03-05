@@ -10,12 +10,28 @@ env:
 
 jobs:
   build-test-package:
-    name: ${{ matrix.os }}
+    name: ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset_os: linux
+            asset_arch: x86_64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            asset_os: macos
+            asset_arch: x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset_os: macos
+            asset_arch: aarch64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset_os: windows
+            asset_arch: x86_64
 
     steps:
       - uses: actions/checkout@v4
@@ -33,26 +49,28 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build
+        run: cargo build --target ${{ matrix.target }}
 
       - name: Test
-        run: cargo test
+        run: cargo test --target ${{ matrix.target }}
 
       - name: Clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --target ${{ matrix.target }} -- -D warnings
 
       - name: Build release binary
-        run: cargo build --release
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Package release archive (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          tar -czf "dist/repoman-${{ runner.os }}-x86_64.tar.gz" -C target/release repoman
+          tar -czf "dist/repoman-${{ matrix.asset_os }}-${{ matrix.asset_arch }}.tar.gz" \
+            -C target/${{ matrix.target }}/release repoman
 
       - name: Install WiX Toolset (Windows)
         if: runner.os == 'Windows'
@@ -75,12 +93,12 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          Compress-Archive -Path target/release/repoman.exe -DestinationPath dist/repoman-windows-x86_64.zip -Force
+          Compress-Archive -Path target/${{ matrix.target }}/release/repoman.exe -DestinationPath dist/repoman-${{ matrix.asset_os }}-${{ matrix.asset_arch }}.zip -Force
           Copy-Item -Path target/wix/*.msi -Destination dist/
 
       - name: Upload CI artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: repoman-${{ runner.os }}-${{ github.sha }}
+          name: repoman-${{ matrix.asset_os }}-${{ matrix.asset_arch }}-${{ github.sha }}
           path: dist/*
           if-no-files-found: error
