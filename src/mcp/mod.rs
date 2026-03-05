@@ -31,7 +31,7 @@ fn capture_real_stdout() -> Result<std::fs::File, Box<dyn std::error::Error>> {
 fn capture_real_stdout() -> Result<std::fs::File, Box<dyn std::error::Error>> {
     use std::os::windows::io::{AsRawHandle, FromRawHandle, RawHandle};
 
-    extern "system" {
+    unsafe extern "system" {
         fn SetStdHandle(nStdHandle: u32, hHandle: RawHandle) -> i32;
     }
 
