@@ -55,11 +55,31 @@ pub fn is_agent_running(config: &Config) -> Option<u32> {
         }
     }
 
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
-        // On non-Unix, just check if PID file exists
-        // This is a simplification - in production you'd use platform-specific APIs
-        Some(pid)
+        // Check if the process is still running via tasklist
+        let status = Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {}", pid), "/NH"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .ok();
+
+        match status {
+            Some(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if stdout.contains(&pid.to_string()) {
+                    Some(pid)
+                } else {
+                    let _ = fs::remove_file(&pid_path);
+                    None
+                }
+            }
+            None => {
+                let _ = fs::remove_file(&pid_path);
+                None
+            }
+        }
     }
 }
 
